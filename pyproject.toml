@@ -3,12 +3,19 @@ name = "relay"
 version = "0.1.0"
 description = "Relay Method — multi-agent software-development workflow"
 requires-python = ">=3.10"
-dependencies = [
-    "click>=8.0",
-]
-license = { text = "MIT" }
+license = "MIT"
 authors = [
     { name = "Radi Radichev" },
+]
+dependencies = [
+    "click>=8.0",
+    "pydantic>=2.0",
+    "python-ulid>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
 ]
 
 [project.scripts]
