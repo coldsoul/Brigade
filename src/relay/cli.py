@@ -15,22 +15,27 @@ import click
 
 CONFIG_TOML_TEMPLATE = """\
 # Relay configuration
-# Model strings use provider/model format (e.g. "anthropic/claude-sonnet-4-20250514")
+# Model strings use provider/model format (e.g. "anthropic/claude-sonnet-5").
+# API keys are never stored here — they come from the environment.
 
+[project]
 max_loops = 3
 
 [roles.interpreter]
 # No model config needed — the Interpreter is the coding harness itself
 
 [roles.analyst]
-model = "anthropic/claude-sonnet-4-20250514"
+model = "anthropic/claude-sonnet-5"
 
 [roles.examiner]
-model = "anthropic/claude-sonnet-4-20250514"
+model = "anthropic/claude-sonnet-5"
 
 [roles.builder]
-model = "anthropic/claude-sonnet-4-20250514"
+model = "anthropic/claude-sonnet-5"
 harness = "claude"
+
+[capabilities.model_overrides]
+# escape hatch — empty by default, filled in only when the built-in table is wrong
 """
 
 MCP_JSON_TEMPLATE = """\
@@ -216,15 +221,37 @@ def _rmtree_safe(path: Path):
 
 @main.command()
 def up():
-    """Start the Relay role workers (stub — real logic in later phases)."""
+    """Start the Relay role workers as foreground tasks."""
+    import threading
+    import time
+
+    from relay.config import load_config
+    from relay.llm import LiteLLMRouter
+    from relay.workers import AnalystWorker, ExaminerWorker
+
     relay_dir = _require_relay_project()
-    click.echo(f"Relay workers would start here ({relay_dir.parent})")
-    click.echo("Waiting for messages... (press Ctrl+C to stop)")
+    config = load_config(relay_dir)
+    router = LiteLLMRouter()
+
+    workers = [
+        AnalystWorker(config, router, relay_dir),
+        ExaminerWorker(config, router, relay_dir),
+    ]
+
+    threads = [
+        threading.Thread(target=w.run, daemon=True, name=w.role)
+        for w in workers
+    ]
+    for t in threads:
+        t.start()
+
+    click.echo(f"Relay workers started: {', '.join(w.role for w in workers)}")
+    click.echo("Press Ctrl+C to stop.")
     try:
         while True:
-            click.pause()
+            time.sleep(1)
     except KeyboardInterrupt:
-        click.echo()
+        click.echo("\nStopping.")
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +261,8 @@ def up():
 @main.command()
 def status():
     """Show current relay project status."""
+    from relay.storage import list_inbox
+
     relay_dir = _find_relay_dir()
     if relay_dir is None:
         click.echo("Not a relay project — no `.relay/` directory found.")
@@ -243,8 +272,12 @@ def status():
     project_dir = relay_dir.parent
     click.echo(f"Relay project: {project_dir}")
 
-    # mailboxes not populated yet, always report 0 for now
-    click.echo("Pending messages: 0")
+    roles = ["analyst", "examiner", "builder", "interpreter"]
+    depths = {role: len(list_inbox(role, relay_dir)) for role in roles}
+    total = sum(depths.values())
+    click.echo(f"Pending messages: {total}")
+    for role in roles:
+        click.echo(f"  {role}: {depths[role]}")
 
 
 # ---------------------------------------------------------------------------
