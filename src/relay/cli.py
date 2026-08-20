@@ -56,6 +56,7 @@ GITIGNORE_ENTRIES = """\
 .relay/mailboxes/
 .relay/state.json
 .relay/work/
+.relay/evidence/
 """
 
 
@@ -227,7 +228,7 @@ def up():
 
     from relay.config import load_config
     from relay.llm import LiteLLMRouter
-    from relay.workers import AnalystWorker, ExaminerWorker
+    from relay.workers import AnalystWorker, BuilderWorker, ExaminerWorker
 
     relay_dir = _require_relay_project()
     config = load_config(relay_dir)
@@ -236,6 +237,7 @@ def up():
     workers = [
         AnalystWorker(config, router, relay_dir),
         ExaminerWorker(config, router, relay_dir),
+        BuilderWorker(config, router, relay_dir),
     ]
 
     threads = [
