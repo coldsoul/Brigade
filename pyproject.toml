@@ -10,6 +10,7 @@ authors = [
 dependencies = [
     "click>=8.0",
     "litellm>=1.0",
+    "mcp>=1.0",
     "pydantic>=2.0",
     "python-ulid>=3.0",
 ]
