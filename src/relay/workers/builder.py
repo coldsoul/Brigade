@@ -13,11 +13,13 @@ from pathlib import Path
 
 from relay.harness import HarnessRunner
 from relay.messages import EvidencePayload, Message
-from relay.worktree import ensure_worktree
+from relay.worktree import ensure_worktree, git_exclude
 from relay.workers.base import RoleWorker, WorkerError, build_reply
 
-# Where the harness writes its evidence report, and where the wrapper reads it.
-EVIDENCE_DIR_NAME = "evidence"
+# The evidence report is written *inside* the worktree (so the harness can
+# write to it — harnesses restrict writes to their workspace) and git-excluded
+# so it never leaks into the committed diff.
+EVIDENCE_FILENAME = "relay-evidence.json"
 
 
 class BuilderWorker(RoleWorker):
@@ -48,6 +50,7 @@ class BuilderWorker(RoleWorker):
     def _handle_expectation(self, msg: Message) -> Message:
         expectations = msg.payload.get("expectations", [])
         integration = msg.payload.get("integration_expectation", "")
+        expectation_ids = [e.get("id", "") for e in expectations]
         worktree = ensure_worktree(self.project_root, msg.behaviour_id)
 
         prompt = self._build_prompt(
@@ -56,11 +59,12 @@ class BuilderWorker(RoleWorker):
             f"EXPECTATIONS:\n{json.dumps(expectations, indent=2)}\n\n"
             f"INTEGRATION EXPECTATION:\n{integration}"
         )
-        evidence = self._run_harness(worktree, msg.behaviour_id, prompt, expectations)
+        evidence = self._run_harness(worktree, prompt, expectation_ids)
         return build_reply(msg, "examiner", "evidence", evidence)
 
     def _handle_verdict(self, msg: Message) -> Message:
         unmet = msg.payload.get("unmet", [])
+        expectation_ids = [u.get("expectation_id", "") for u in unmet]
         worktree = ensure_worktree(self.project_root, msg.behaviour_id)
 
         prompt = self._build_prompt(
@@ -69,7 +73,7 @@ class BuilderWorker(RoleWorker):
             "by running something.\n\n"
             f"UNMET EXPECTATIONS:\n{json.dumps(unmet, indent=2)}"
         )
-        evidence = self._run_harness(worktree, msg.behaviour_id, prompt, unmet)
+        evidence = self._run_harness(worktree, prompt, expectation_ids)
         return build_reply(msg, "examiner", "evidence", evidence)
 
     # ------------------------------------------------------------------
@@ -77,14 +81,18 @@ class BuilderWorker(RoleWorker):
     # ------------------------------------------------------------------
 
     def _run_harness(
-        self, worktree: Path, behaviour_id: str, prompt: str, expectations: list
+        self, worktree: Path, prompt: str, expectation_ids: list[str]
     ) -> dict:
         harness = self._builder_harness()
         model = self._builder_model()
-        evidence_path = (
-            self.relay_dir / EVIDENCE_DIR_NAME / f"{behaviour_id}.json"
-        )
-        evidence_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # The evidence file lives inside the worktree so the harness can write
+        # to it.  It is git-excluded so it never ends up in the merged diff.
+        git_exclude(worktree, EVIDENCE_FILENAME)
+        evidence_path = worktree / EVIDENCE_FILENAME
+        # Remove any stale report from a previous round so a failed run can't
+        # silently read old evidence.
+        evidence_path.unlink(missing_ok=True)
 
         full_prompt = (
             f"{prompt}\n\n"
@@ -95,17 +103,16 @@ class BuilderWorker(RoleWorker):
         result = self.harness_runner.run(harness, model, worktree, full_prompt)
 
         # Log the full harness output for debugging (never goes into the ledger).
-        print(
-            f"[{self.role}] harness exited {result.exit_code} "
-            f"({' '.join(result.command)})"
-        )
+        print(f"[{self.role}] harness exited {result.exit_code}")
+        if result.stdout:
+            print(f"[{self.role}] harness stdout:\n{result.stdout.strip()[:2000]}")
         if result.stderr:
-            print(f"[{self.role}] harness stderr: {result.stderr.strip()[:2000]}")
+            print(f"[{self.role}] harness stderr:\n{result.stderr.strip()[:2000]}")
 
-        return self._read_evidence(evidence_path, result, expectations)
+        return self._read_evidence(evidence_path, result, expectation_ids)
 
     def _read_evidence(
-        self, evidence_path: Path, result, expectations: list
+        self, evidence_path: Path, result, expectation_ids: list[str]
     ) -> dict:
         try:
             data = json.loads(evidence_path.read_text(encoding="utf-8"))
@@ -115,14 +122,17 @@ class BuilderWorker(RoleWorker):
             # The harness failed to produce a valid evidence report.  Produce a
             # conservative narrative fallback so the Examiner has something to
             # judge rather than the worker silently dropping the round.
-            return self._fallback_evidence(result, expectations, exc)
+            print(f"[{self.role}] no valid evidence written: {exc}")
+            return self._fallback_evidence(result, expectation_ids)
 
-    def _fallback_evidence(self, result, expectations: list, exc: Exception) -> dict:
+    def _fallback_evidence(
+        self, result, expectation_ids: list[str]
+    ) -> dict:
         raw = (result.stderr or result.stdout or "").strip()[:1000]
         return {
             "evidence": [
                 {
-                    "expectation_id": exp["id"],
+                    "expectation_id": expectation_id,
                     "claim": "the harness session did not produce valid evidence",
                     "execution": {
                         "command": " ".join(result.command),
@@ -131,7 +141,7 @@ class BuilderWorker(RoleWorker):
                     },
                     "confidence": "narrative",
                 }
-                for exp in expectations
+                for expectation_id in expectation_ids
             ],
             "test_files_touched": [],
         }

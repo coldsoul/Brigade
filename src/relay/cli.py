@@ -49,6 +49,19 @@ MCP_JSON_TEMPLATE = """\
 }
 """
 
+OPENCODE_JSON_TEMPLATE = """\
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "relay": {
+      "type": "local",
+      "command": ["relay", "mcp"],
+      "enabled": true
+    }
+  }
+}
+"""
+
 AGENTS_MD_TEMPLATE = """\
 # Relay Interpreter
 
@@ -242,6 +255,7 @@ def init(directory: str, force: bool):
     (relay_dir / "config.toml").write_text(CONFIG_TOML_TEMPLATE)
     (relay_dir / "state.json").write_text("{}\n")
     (target / ".mcp.json").write_text(MCP_JSON_TEMPLATE)
+    (target / "opencode.json").write_text(OPENCODE_JSON_TEMPLATE)
     (target / "AGENTS.md").write_text(AGENTS_MD_TEMPLATE)
 
     # --- .gitignore --------------------------------------------------------

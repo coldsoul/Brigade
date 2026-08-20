@@ -356,6 +356,33 @@ class TestBuilder:
         # fallback narrative evidence, never falsely "executed"
         assert reply.payload["evidence"][0]["confidence"] == "narrative"
 
+    def test_verdict_fallback_uses_expectation_id(self, relay_dir):
+        """Regression: a failing harness on a verdict round must not KeyError.
+
+        Verdict `unmet` items are shaped {expectation_id, reason}, not {id, ...}.
+        """
+        harness = FakeHarness(evidence_payload=None)  # harness fails, writes nothing
+        worker = BuilderWorker(_make_config(), None, relay_dir, harness_runner=harness)
+
+        verdict = _make_message(
+            "verdict",
+            "examiner",
+            "builder",
+            {
+                "satisfied": [],
+                "unmet": [{"expectation_id": "E1", "reason": "wrong on negatives"}],
+                "loop_count": 1,
+                "escalate": False,
+            },
+            behaviour_id=_id(),
+        )
+        reply = worker.process(verdict)
+
+        assert reply.type == "evidence"
+        item = reply.payload["evidence"][0]
+        assert item["expectation_id"] == "E1"
+        assert item["confidence"] == "narrative"
+
     def test_crash_survival_worktree_idempotent(self, relay_dir):
         harness = FakeHarness(evidence_payload=_executed_evidence())
         worker = BuilderWorker(_make_config(), None, relay_dir, harness_runner=harness)

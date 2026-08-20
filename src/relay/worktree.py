@@ -47,3 +47,23 @@ def current_branch(worktree_path: Path) -> str:
 def has_worktree(project_root: Path, behaviour_id: str) -> bool:
     """True if a worktree already exists for *behaviour_id*."""
     return (project_root / ".relay" / "work" / behaviour_id / ".git").exists()
+
+
+def git_exclude(worktree_path: Path, pattern: str) -> None:
+    """Append *pattern* to the worktree's local git exclude file.
+
+    Keeps the pattern out of `git status`/commits without touching the committed
+    `.gitignore` — the exclude file is per-clone (per-worktree) and never merged.
+    """
+    result = subprocess.run(
+        ["git", "-C", str(worktree_path), "rev-parse", "--git-path", "info/exclude"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    exclude_path = Path(result.stdout.strip())
+    exclude_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = exclude_path.read_text().splitlines() if exclude_path.exists() else []
+    if pattern not in existing:
+        with exclude_path.open("a") as f:
+            f.write(f"{pattern}\n")
