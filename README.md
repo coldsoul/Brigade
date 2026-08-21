@@ -1,7 +1,7 @@
 # Relay
 
 An implementation of the [Relay Method](https://a4al6a.substack.com/p/the-relay-method) — a multi-agent software-development workflow.
-It splits AI-assisted development across specialised roles arranged in a line, each allowed to talk only to its neighbours, plus a Designer reachable directly from the Interpreter for visual exploration:
+It splits AI-assisted development across specialised roles arranged in a line, each allowed to talk only to its neighbours, plus a Designer reachable directly from the Interpreter for visual exploration, and a Sentinel that audits the whole ledger outside the chain:
 
 ```
 Owner (human) ⇄ Interpreter ⇄ Analyst ⇄ Examiner ⇄ Builder
@@ -19,9 +19,11 @@ Each role reasons at a different level of abstraction, and every message between
 | **Examiner** | Decomposes a behaviour into checkable *expectations*, then judges evidence and issues a verdict (Expectation-Driven Development). | no |
 | **Builder** | Implements expectations in an isolated worktree and reports real executed evidence. | yes |
 | **Designer** | Generates exploratory HTML/CSS concept directions, reviewed and iterated on by the Owner. | yes (visual shell only) |
+| **Sentinel** | Periodically audits the ledger for contract violations and surfaces advisories. | no |
 
 The Interpreter is **not** a separate process — it is the coding harness you already use (`claude` or `opencode`), configured to behave as the Interpreter via an `AGENTS.md` persona and an MCP server.
 The Analyst, Examiner, Builder, and Designer each get their own configurable model.
+The Sentinel is an auditor outside the chain — it only reads the ledger and writes `advisory`/`warning` flags; it never intervenes.
 
 ## Installation
 
@@ -103,6 +105,10 @@ model = "deepseek/deepseek-v4-pro"
 harness = "opencode"               # "claude" or "opencode" — the harness that generates visual concepts
 review_tool = "auto"               # "auto" | "lavish" | "basic" — how the Owner reviews the concept
 
+[roles.sentinel]
+model = "anthropic/claude-sonnet-5"
+scan_every = 10                    # run a scan after this many new ledger messages
+
 [capabilities.model_overrides]
 # escape hatch — fill in only when the built-in capability table is wrong
 # "some/model" = { structured_output = "loose" }
@@ -112,6 +118,7 @@ review_tool = "auto"               # "auto" | "lavish" | "basic" — how the Own
 - **API keys never go in config** — they come from the environment, using the standard per-provider variable names (`DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`).
 - **`[roles.builder].harness` is required** when the builder role is configured.
 - **`[roles.designer].review_tool`** selects how the Owner reviews generated concepts — `lavish` (lavish-axi), `basic` (browser + the `relay up` terminal), or `auto` to pick based on what's on `PATH`.
+- **`[roles.sentinel].scan_every`** controls how often the auditor scans (in new-ledger-message counts). Recommend configuring the Sentinel to a *different* model than the rest of the pipeline — an auditor sharing blind spots with what it audits is a weaker auditor.
 - The `[roles.interpreter]` role needs no model — the Interpreter is the harness itself.
 
 ### Model capabilities
@@ -156,6 +163,19 @@ When the Owner asks *what something should look like* rather than *what it shoul
 
 The review is a live, synchronous loop (not mailbox-routed), and hitting `max_loops` without approval surfaces an explicit "proceed as-is or abandon" choice to the Owner — never a silent finalization.
 
+## Interpreter classification (read vs change vs design)
+
+Not every message enters the pipeline. The Interpreter classifies each Owner message before responding:
+
+- **Read-only question** ("how do I run this", "what does this function do") — answered directly with the harness's own read tools; no `dispatch_behaviour`, no worker activity.
+- **Code change** — even a one-line change — always routed through `dispatch_behaviour`. The Interpreter never edits project code itself.
+- **Visual/creative direction** — routed through `dispatch_design_request`.
+- **Ambiguous bug-report** ("why doesn't X work") — investigated and answered first, then the Owner is asked whether to dispatch a fix; never auto-dispatched.
+
+Direct answers are still logged to the ledger via `log_conversation` (`question`/`result`), so the conversation stays replayable even without a pipeline run.
+
+**Enforcement is persona-only.** The relay package does not scope the harness's own file-write tools — the "never edit project code directly" guarantee is enforced by the Interpreter persona (`AGENTS.md`), not by a hard permission. This means the guarantee is as strong as the model's instruction-following: a stronger model honors it reliably, a weaker one may drift. Hard tool-level scoping would require harness-specific permission configuration and is left to the operator.
+
 ## The ledger
 
 Every message is written once to `.relay/ledger/<ulid>.json` — a permanent, git-committed audit trail.
@@ -185,5 +205,4 @@ The tests cover the message envelope and validator, the ledger and mailbox primi
 - **Phase 3** — the Builder role: git worktrees and headless harness invocation.
 - **Phase 4** — the Interpreter MCP server (`dispatch_behaviour`, `check_status`, `log_conversation`) and the Interpreter persona.
 - **Phase 6** — the Designer role: visual-concept worktrees, the review-adapter interface (`lavish`/`basic`), and the design dispatch/status tools.
-
-The Sentinel role (a whole-conversation contract auditor) is planned but not yet built.
+- **Phase 7** — the Sentinel: a periodic read-only ledger auditor with leakage, gamed-expectation, confidence-mismatch, and systemic-loop checks.

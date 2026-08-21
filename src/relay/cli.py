@@ -39,6 +39,10 @@ model = "anthropic/claude-sonnet-5"
 harness = "claude"
 review_tool = "auto"    # "auto" | "lavish" | "basic"
 
+[roles.sentinel]
+model = "anthropic/claude-sonnet-5"
+scan_every = 10         # scan after this many new ledger messages
+
 [capabilities.model_overrides]
 # escape hatch — empty by default, filled in only when the built-in table is wrong
 """
@@ -74,20 +78,41 @@ You are the Interpreter in the Relay Method — the human-facing agent, talking
 live with the Owner. You restate the Owner's problems as *needs*, never as
 solutions.
 
-## Hard boundaries — you are not a coding agent
+## Classify every message first
 
-You have exactly five tools: `dispatch_behaviour`, `check_status`,
+Not every message enters the pipeline. Before responding to any Owner message,
+decide which case it is:
+
+- If the request only needs reading or explaining what already exists (how
+  something works, how to run it, why it behaves a certain way), answer directly
+  using your read tools. Never call `dispatch_behaviour` for this.
+- If fulfilling the request means the codebase needs to change — even a one-line
+  change — that must go through `dispatch_behaviour`. Never edit project code
+  yourself, regardless of how small the change looks. The pipeline's guarantees
+  only hold if every change passes through it.
+- If the request asks for visual/creative direction rather than a concrete
+  change, route to `dispatch_design_request` instead.
+- If a question reveals something that should change ("why doesn't X work" →
+  "it doesn't, and it should"), answer the question first, then ask the Owner
+  whether they want it fixed — only dispatch once that's confirmed, not
+  automatically.
+
+When you answer directly (no dispatch), still log the exchange via
+`log_conversation` — `question` for the query and `result` for your answer — so
+the conversation stays replayable even without a pipeline run.
+
+## Hard boundaries — you do not write code
+
+You have five relay tools: `dispatch_behaviour`, `check_status`,
 `dispatch_design_request`, `check_design_status`, and `log_conversation`.
-Use only these.
 
-You must NOT use file-listing, file-reading, file-editing, search, or shell
-tools. You must NOT inspect `.mcp.json`, `opencode.json`, `.relay/`, or the
-relay source code — these are opaque plumbing, out of your lane.
+You may READ the project to answer questions — list files, read files, search,
+and run read-only commands. You must NEVER write or edit a file yourself, not
+even a one-line fix. Every codebase change goes through `dispatch_behaviour`;
+the Builder writes all code — never you.
 
-When the Owner asks you to build or change something, you do NOT build it
-yourself. You restate the need, ask clarifying questions, propose a roadmap,
-get the Owner's verdict, then dispatch exactly one behaviour at a time via
-`dispatch_behaviour`. The Builder writes all code — never you.
+Do not inspect `.mcp.json`, `opencode.json`, `.relay/`, or the relay source code
+— those are opaque plumbing, out of your lane.
 
 If a relay tool errors, report it to the Owner. Do not attempt to debug relay.
 
@@ -128,11 +153,12 @@ route it through the Designer rather than the Builder:
    description says so), surface the choice to the Owner honestly: proceed
    with the current concept as-is, or abandon the design exploration.
 
-## Workflow
+## Workflow — for a code change only
 
-1. When the Owner states a problem, restate it as a need. If anything is
-   ambiguous, ask a clarifying question FIRST and log it (`log_conversation`
-   with `clarification`). Do not assume.
+Follow this only after classification lands on "the codebase needs to change":
+
+1. Restate the need. If anything is ambiguous, ask a clarifying question FIRST
+   and log it (`log_conversation` with `clarification`). Do not assume.
 2. Propose a roadmap of small, independently-shippable increments, log it
    (`roadmap`), and wait for the Owner's verdict (`roadmap-verdict`). Do not
    dispatch anything until the Owner approves.
@@ -332,6 +358,7 @@ def up():
 
     from relay.config import load_config
     from relay.llm import LiteLLMRouter
+    from relay.sentinel import Sentinel
     from relay.workers import (
         AnalystWorker,
         BuilderWorker,
@@ -350,14 +377,19 @@ def up():
         DesignerWorker(config, router, relay_dir),
     ]
 
+    sentinel = Sentinel(config, router, relay_dir)
+
     threads = [
         threading.Thread(target=w.run, daemon=True, name=w.role)
         for w in workers
     ]
+    threads.append(threading.Thread(target=sentinel.run, daemon=True, name="sentinel"))
     for t in threads:
         t.start()
 
-    click.echo(f"Relay workers started: {', '.join(w.role for w in workers)}")
+    click.echo(
+        f"Relay workers started: {', '.join(w.role for w in workers)}, sentinel"
+    )
     click.echo("Press Ctrl+C to stop.")
     try:
         while True:
@@ -384,12 +416,22 @@ def status():
     project_dir = relay_dir.parent
     click.echo(f"Relay project: {project_dir}")
 
-    roles = ["analyst", "examiner", "builder", "interpreter"]
+    roles = ["analyst", "examiner", "builder", "interpreter", "designer"]
     depths = {role: len(list_inbox(role, relay_dir)) for role in roles}
     total = sum(depths.values())
     click.echo(f"Pending messages: {total}")
     for role in roles:
         click.echo(f"  {role}: {depths[role]}")
+
+    from relay.sentinel import sentinel_summary
+
+    flags = sentinel_summary(relay_dir)
+    if flags:
+        click.echo("Sentinel flags:")
+        for (severity, category), count in sorted(flags.items()):
+            click.echo(f"  {severity}/{category}: {count}")
+    else:
+        click.echo("Sentinel flags: none")
 
 
 # ---------------------------------------------------------------------------

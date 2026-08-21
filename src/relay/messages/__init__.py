@@ -1,9 +1,11 @@
 """Message models, topology, and validator."""
 
 from relay.messages.models import (
+    AdvisoryPayload,
     BehaviourPayload,
     BehaviourStatusPayload,
     BehaviourToImplementPayload,
+    Concern,
     DesignRequestPayload,
     DesignResultPayload,
     EvidenceExecution,
@@ -20,6 +22,7 @@ from relay.messages.models import (
 from relay.messages.topology import (
     MAILBOX_ROUTED_EDGES,
     OWNER_INTERPRETER_TYPES,
+    SENTINEL_TYPES,
     TOPOLOGY,
     is_owner_interpreter_edge,
 )
@@ -41,10 +44,13 @@ __all__ = [
     "OwnerInterpreterPayload",
     "DesignRequestPayload",
     "DesignResultPayload",
+    "AdvisoryPayload",
+    "Concern",
     "PAYLOAD_MODEL_BY_TYPE",
     # Topology
     "TOPOLOGY",
     "OWNER_INTERPRETER_TYPES",
+    "SENTINEL_TYPES",
     "MAILBOX_ROUTED_EDGES",
     "is_owner_interpreter_edge",
     # Validator

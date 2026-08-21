@@ -7,6 +7,7 @@ from pydantic import ValidationError as PydanticValidationError
 from relay.messages.models import PAYLOAD_MODEL_BY_TYPE, Message
 from relay.messages.topology import (
     OWNER_INTERPRETER_TYPES,
+    SENTINEL_TYPES,
     TOPOLOGY,
     is_owner_interpreter_edge,
 )
@@ -32,6 +33,19 @@ def validate(message: Message) -> None:
     """
     edge = (message.from_role, message.to_role)
     msg_type = message.type
+
+    # Sentinel wildcard: the Sentinel may send advisory/warning to any role.
+    if message.from_role == "sentinel":
+        if msg_type not in SENTINEL_TYPES:
+            raise ValidationError(
+                f"Sentinel may only send {sorted(SENTINEL_TYPES)}, not '{msg_type}'",
+                {
+                    "type": msg_type,
+                    "allowed_types": sorted(SENTINEL_TYPES),
+                },
+            )
+        _validate_payload(msg_type, message)
+        return
 
     # 1. Check the edge exists
     allowed_types = TOPOLOGY.get(edge)
@@ -68,6 +82,11 @@ def validate(message: Message) -> None:
         )
 
     # 3. Validate the payload against the type's schema
+    _validate_payload(msg_type, message)
+
+
+def _validate_payload(msg_type: str, message: Message) -> None:
+    """Validate `message.payload` against the schema registered for `msg_type`."""
     payload_model = PAYLOAD_MODEL_BY_TYPE.get(msg_type)
     if payload_model is None:
         raise ValidationError(

@@ -16,6 +16,7 @@ class RoleConfig(BaseModel):
     model: str | None = None
     harness: str | None = None
     review_tool: str = "auto"  # designer-only: "auto" | "lavish" | "basic"
+    scan_every: int = 10  # sentinel-only: scan after N new ledger messages
 
 
 class CapabilitiesConfig(BaseModel):

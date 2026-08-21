@@ -34,6 +34,10 @@ OWNER_INTERPRETER_TYPES: set[str] = {
 # Owner ↔ Interpreter edges do NOT appear here.
 MAILBOX_ROUTED_EDGES: set[tuple[str, str]] = set(TOPOLOGY.keys())
 
+# Sentinel types — the Sentinel addresses any role (a wildcard edge), but for
+# this phase it only ever *writes* these and never receives.
+SENTINEL_TYPES: set[str] = {"advisory", "warning"}
+
 
 def is_owner_interpreter_edge(from_role: str, to_role: str) -> bool:
     """True if this is an Owner ↔ Interpreter edge (live chat, not mailbox)."""

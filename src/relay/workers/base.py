@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import BaseModel, ValidationError as PydanticValidationError
+from pydantic import BaseModel
 from ulid import ULID
 
-from relay.capabilities import resolve_capabilities
 from relay.config import Config
 from relay.llm import ModelRouter
 from relay.messages import Message, validate
+from relay.model_calls import ModelCallError, call_for_schema
 from relay.personas import load_persona
 from relay.storage import consume, deliver, list_inbox
 
 POLL_INTERVAL = 0.5
-MAX_SCHEMA_RETRIES = 3
 
 
 class WorkerError(Exception):
@@ -133,58 +131,14 @@ class RoleWorker:
         and retries, up to MAX_SCHEMA_RETRIES times.
         """
         model = self._model_name()
-        caps = resolve_capabilities(
-            model, self.config.capabilities.model_overrides
-        )
-        json_mode = caps.structured_output in ("strict", "loose")
-
-        errors: list[str] = []
-        for _ in range(MAX_SCHEMA_RETRIES):
-            full_prompt = prompt
-            if errors:
-                full_prompt += (
-                    "\n\nYour previous response was invalid: "
-                    + "; ".join(errors)
-                    + "\nCorrect it and respond again with JSON matching the "
-                      "required schema."
-                )
-
-            raw = self.router.complete(model, full_prompt, json_mode=json_mode)
-
-            try:
-                data = self._parse_json(raw)
-                validated = schema.model_validate(data)
-                return validated.model_dump()
-            except (ValueError, PydanticValidationError) as exc:
-                errors.append(self._format_error(exc))
-
-        raise WorkerError(
-            f"Failed to produce a valid {output_label} after "
-            f"{MAX_SCHEMA_RETRIES} attempts: {'; '.join(errors)}"
-        )
-
-    @staticmethod
-    def _parse_json(raw: str) -> dict:
-        text = raw.strip()
-        # strip markdown code fences if present
-        if text.startswith("```"):
-            lines = text.splitlines()
-            if lines and lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            text = "\n".join(lines).strip()
-
-        parsed = json.loads(text)
-        if not isinstance(parsed, dict):
-            raise ValueError("expected a JSON object")
-        return parsed
-
-    @staticmethod
-    def _format_error(exc: Exception) -> str:
-        if isinstance(exc, PydanticValidationError):
-            return "; ".join(
-                f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}"
-                for e in exc.errors()
+        try:
+            return call_for_schema(
+                self.router,
+                model,
+                prompt,
+                schema,
+                overrides=self.config.capabilities.model_overrides,
+                label=output_label,
             )
-        return str(exc)
+        except ModelCallError as exc:
+            raise WorkerError(str(exc)) from exc

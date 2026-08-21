@@ -117,6 +117,24 @@ class DesignResultPayload(BaseModel):
     iterations: int
 
 
+class Concern(BaseModel):
+    """A single Sentinel finding."""
+
+    behaviour_id: str
+    message_id: str
+    category: Literal[
+        "leakage", "gamed_expectation", "confidence_mismatch", "systemic_loop"
+    ]
+    description: str
+
+
+class AdvisoryPayload(BaseModel):
+    """Shared payload for `advisory` and `warning` (Sentinel → any role)."""
+
+    concerns: list[Concern]
+    severity: Literal["advisory", "warning"]
+
+
 # ---------------------------------------------------------------------------
 # Message envelope
 # ---------------------------------------------------------------------------
@@ -150,6 +168,9 @@ PAYLOAD_MODEL_BY_TYPE: dict[str, type[BaseModel]] = {
     # Designer types
     "design-request": DesignRequestPayload,
     "design-result": DesignResultPayload,
+    # Sentinel types
+    "advisory": AdvisoryPayload,
+    "warning": AdvisoryPayload,
     # Owner ↔ Interpreter types
     "problem": OwnerInterpreterPayload,
     "clarification": OwnerInterpreterPayload,
