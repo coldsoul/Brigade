@@ -4,6 +4,8 @@ from relay.messages.models import (
     BehaviourPayload,
     BehaviourStatusPayload,
     BehaviourToImplementPayload,
+    DesignRequestPayload,
+    DesignResultPayload,
     EvidenceExecution,
     EvidenceItem,
     EvidencePayload,
@@ -37,6 +39,8 @@ __all__ = [
     "VerdictPayload",
     "BehaviourStatusPayload",
     "OwnerInterpreterPayload",
+    "DesignRequestPayload",
+    "DesignResultPayload",
     "PAYLOAD_MODEL_BY_TYPE",
     # Topology
     "TOPOLOGY",

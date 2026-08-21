@@ -34,6 +34,11 @@ model = "anthropic/claude-sonnet-5"
 model = "anthropic/claude-sonnet-5"
 harness = "claude"
 
+[roles.designer]
+model = "anthropic/claude-sonnet-5"
+harness = "claude"
+review_tool = "auto"    # "auto" | "lavish" | "basic"
+
 [capabilities.model_overrides]
 # escape hatch — empty by default, filled in only when the built-in table is wrong
 """
@@ -71,8 +76,9 @@ solutions.
 
 ## Hard boundaries — you are not a coding agent
 
-You have exactly three tools: `dispatch_behaviour`, `check_status`, and
-`log_conversation`. Use only these.
+You have exactly five tools: `dispatch_behaviour`, `check_status`,
+`dispatch_design_request`, `check_design_status`, and `log_conversation`.
+Use only these.
 
 You must NOT use file-listing, file-reading, file-editing, search, or shell
 tools. You must NOT inspect `.mcp.json`, `opencode.json`, `.relay/`, or the
@@ -98,8 +104,29 @@ If a relay tool errors, report it to the Owner. Do not attempt to debug relay.
   Returns a `behaviour_id` immediately and does NOT block.
 - `check_status(behaviour_id)` — poll for the result of a dispatched behaviour.
   Call this over your own subsequent turns, not in one long blocking call.
+- `dispatch_design_request(text)` — send a creative/visual exploration request
+  to the Designer. Returns a `behaviour_id` immediately and does NOT block.
+- `check_design_status(behaviour_id)` — poll for a design result (an approved
+  HTML concept). Returns `artifact_ref` and `description` when done.
 - `log_conversation(type, text)` — record an Owner↔Interpreter message in the
   permanent ledger so the whole conversation stays replayable.
+
+## Design exploration (when the request is visual, not concrete)
+
+When the Owner asks what something should look like — a layout, a page, a
+screen, a visual direction — before there is a concrete behaviour to build,
+route it through the Designer rather than the Builder:
+
+1. Dispatch the design request via `dispatch_design_request`, then poll
+   `check_design_status` until it returns `done`.
+2. Present the returned `description` to the Owner for approval.
+3. Once the Owner approves the direction, fold the returned `artifact_ref`
+   (the path to the approved HTML file) into the text of the eventual
+   `behaviour-to-implement` you send via `dispatch_behaviour`, so the Builder
+   can see the agreed design while it works.
+4. If the design result indicates the iteration cap was reached (the
+   description says so), surface the choice to the Owner honestly: proceed
+   with the current concept as-is, or abandon the design exploration.
 
 ## Workflow
 
@@ -260,6 +287,7 @@ def init(directory: str, force: bool):
         relay_dir / "mailboxes" / "examiner" / "inbox",
         relay_dir / "mailboxes" / "builder" / "inbox",
         relay_dir / "mailboxes" / "interpreter" / "inbox",
+        relay_dir / "mailboxes" / "designer" / "inbox",
         relay_dir / "ledger",
         relay_dir / "personas",
         relay_dir / "work",
@@ -304,7 +332,12 @@ def up():
 
     from relay.config import load_config
     from relay.llm import LiteLLMRouter
-    from relay.workers import AnalystWorker, BuilderWorker, ExaminerWorker
+    from relay.workers import (
+        AnalystWorker,
+        BuilderWorker,
+        DesignerWorker,
+        ExaminerWorker,
+    )
 
     relay_dir = _require_relay_project()
     config = load_config(relay_dir)
@@ -314,6 +347,7 @@ def up():
         AnalystWorker(config, router, relay_dir),
         ExaminerWorker(config, router, relay_dir),
         BuilderWorker(config, router, relay_dir),
+        DesignerWorker(config, router, relay_dir),
     ]
 
     threads = [

@@ -1,10 +1,12 @@
 # Relay
 
 An implementation of the [Relay Method](https://a4al6a.substack.com/p/the-relay-method) — a multi-agent software-development workflow.
-It splits AI-assisted development across five specialised roles arranged in a line, each allowed to talk only to its neighbours:
+It splits AI-assisted development across specialised roles arranged in a line, each allowed to talk only to its neighbours, plus a Designer reachable directly from the Interpreter for visual exploration:
 
 ```
 Owner (human) ⇄ Interpreter ⇄ Analyst ⇄ Examiner ⇄ Builder
+                       ⇅
+                    Designer
 ```
 
 Each role reasons at a different level of abstraction, and every message between them is written once to a permanent ledger, so the whole trail from a human's problem statement down to real executed evidence is replayable and auditable.
@@ -15,10 +17,11 @@ Each role reasons at a different level of abstraction, and every message between
 | **Interpreter** | The coding harness itself. Restates problems as *needs* and talks to the Owner. | no |
 | **Analyst** | Turns a need into an observable *behaviour* (what must be true, never *how*). | no |
 | **Examiner** | Decomposes a behaviour into checkable *expectations*, then judges evidence and issues a verdict (Expectation-Driven Development). | no |
-| **Builder** | The only role that touches code. Implements expectations in an isolated worktree and reports real executed evidence. | yes |
+| **Builder** | Implements expectations in an isolated worktree and reports real executed evidence. | yes |
+| **Designer** | Generates exploratory HTML/CSS concept directions, reviewed and iterated on by the Owner. | yes (visual shell only) |
 
 The Interpreter is **not** a separate process — it is the coding harness you already use (`claude` or `opencode`), configured to behave as the Interpreter via an `AGENTS.md` persona and an MCP server.
-The Analyst, Examiner, and Builder each get their own configurable model.
+The Analyst, Examiner, Builder, and Designer each get their own configurable model.
 
 ## Installation
 
@@ -95,6 +98,11 @@ model = "deepseek/deepseek-v4-pro"
 model = "deepseek/deepseek-v4-pro"
 harness = "opencode"               # "claude" or "opencode" — the coding harness the Builder spawns
 
+[roles.designer]
+model = "deepseek/deepseek-v4-pro"
+harness = "opencode"               # "claude" or "opencode" — the harness that generates visual concepts
+review_tool = "auto"               # "auto" | "lavish" | "basic" — how the Owner reviews the concept
+
 [capabilities.model_overrides]
 # escape hatch — fill in only when the built-in capability table is wrong
 # "some/model" = { structured_output = "loose" }
@@ -103,6 +111,7 @@ harness = "opencode"               # "claude" or "opencode" — the coding harne
 - **`model`** strings are `provider/model` (LiteLLM-style), e.g. `anthropic/claude-sonnet-5`, `deepseek/deepseek-v4-pro`, or `openrouter/deepseek/deepseek-v4-pro`.
 - **API keys never go in config** — they come from the environment, using the standard per-provider variable names (`DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`).
 - **`[roles.builder].harness` is required** when the builder role is configured.
+- **`[roles.designer].review_tool`** selects how the Owner reviews generated concepts — `lavish` (lavish-axi), `basic` (browser + the `relay up` terminal), or `auto` to pick based on what's on `PATH`.
 - The `[roles.interpreter]` role needs no model — the Interpreter is the harness itself.
 
 ### Model capabilities
@@ -115,7 +124,7 @@ A small built-in table tracks whether each provider supports structured output: 
 | Command | Description |
 |---|---|
 | `relay init [DIR]` | Scaffold `.relay/` and harness files into a new or existing directory (defaults to `.`). Refuses to overwrite unless `--force`. |
-| `relay up` | Run the Analyst, Examiner, and Builder workers as foreground tasks. |
+| `relay up` | Run the Analyst, Examiner, Builder, and Designer workers as foreground tasks. |
 | `relay status` | Show inbox depths and project state. |
 | `relay down` | Stop workers (stub — workers run in the foreground for now). |
 | `relay mcp` | Run the Interpreter MCP server over stdio (spawned by the harness, not called directly). |
@@ -135,6 +144,18 @@ A small built-in table tracks whether each provider supports structured output: 
 The `expectation → evidence → verdict` loop is capped at `max_loops` (default 3).
 On cap-out the Examiner escalates `blocked` upward instead of looping forever.
 
+## Design exploration
+
+When the Owner asks *what something should look like* rather than *what it should do*, the Interpreter routes it through the Designer instead of the Builder:
+
+1. The Interpreter dispatches the request via `dispatch_design_request`.
+2. The Designer generates a runnable HTML/CSS concept in its own worktree (`.relay/work/<behaviour_id>-design/`).
+3. The Owner reviews the concept through the configured adapter and gives feedback.
+4. The Designer regenerates in place, same worktree, until the Owner approves or the `max_loops` cap is hit.
+5. The approved concept's `artifact_ref` is folded into the eventual `behaviour-to-implement`, so the Builder can see the agreed design while it works.
+
+The review is a live, synchronous loop (not mailbox-routed), and hitting `max_loops` without approval surfaces an explicit "proceed as-is or abandon" choice to the Owner — never a silent finalization.
+
 ## The ledger
 
 Every message is written once to `.relay/ledger/<ulid>.json` — a permanent, git-committed audit trail.
@@ -145,7 +166,7 @@ The ledger files sort chronologically by their ULID id, so the whole conversatio
 
 Each role has a persona prompt defining its identity, allowed neighbours, forbidden-leakage boundaries, and output contract.
 Built-in defaults ship with the package.
-To override one, drop a file at `.relay/personas/<role>.md` (`analyst`, `examiner`, or `builder`).
+To override one, drop a file at `.relay/personas/<role>.md` (`analyst`, `examiner`, `builder`, or `designer`).
 
 ## Development
 
@@ -163,5 +184,6 @@ The tests cover the message envelope and validator, the ledger and mailbox primi
 - **Phase 2** — generic worker loop plus the Analyst and Examiner roles.
 - **Phase 3** — the Builder role: git worktrees and headless harness invocation.
 - **Phase 4** — the Interpreter MCP server (`dispatch_behaviour`, `check_status`, `log_conversation`) and the Interpreter persona.
+- **Phase 6** — the Designer role: visual-concept worktrees, the review-adapter interface (`lavish`/`basic`), and the design dispatch/status tools.
 
 The Sentinel role (a whole-conversation contract auditor) is planned but not yet built.

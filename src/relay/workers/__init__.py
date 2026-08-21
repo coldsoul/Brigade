@@ -1,8 +1,9 @@
-"""Role workers — Analyst, Examiner, and Builder."""
+"""Role workers — Analyst, Examiner, Builder, and Designer."""
 
 from relay.workers.analyst import AnalystWorker
 from relay.workers.base import RoleWorker, WorkerError, build_reply
 from relay.workers.builder import BuilderWorker
+from relay.workers.designer import DesignerWorker
 from relay.workers.examiner import ExaminerWorker
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "AnalystWorker",
     "ExaminerWorker",
     "BuilderWorker",
+    "DesignerWorker",
 ]

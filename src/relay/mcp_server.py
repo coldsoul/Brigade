@@ -11,8 +11,10 @@ from __future__ import annotations
 from mcp.server.mcpserver import MCPServer
 
 from relay.interpreter import (
+    check_design_status_impl,
     check_status_impl,
     dispatch_behaviour_impl,
+    dispatch_design_request_impl,
     log_conversation_impl,
 )
 from relay.paths import find_relay_dir
@@ -49,6 +51,18 @@ def dispatch_behaviour(text: str) -> dict:
 def check_status(behaviour_id: str) -> dict:
     """Check the status of a dispatched behaviour. Non-blocking poll."""
     return check_status_impl(_require_relay_dir(), behaviour_id)
+
+
+@mcp.tool()
+def dispatch_design_request(text: str) -> dict:
+    """Send a design request for visual exploration. Returns immediately."""
+    return dispatch_design_request_impl(_require_relay_dir(), text)
+
+
+@mcp.tool()
+def check_design_status(behaviour_id: str) -> dict:
+    """Check the status of a dispatched design request. Non-blocking poll."""
+    return check_design_status_impl(_require_relay_dir(), behaviour_id)
 
 
 @mcp.tool()

@@ -99,6 +99,24 @@ class OwnerInterpreterPayload(BaseModel):
     text: str
 
 
+class DesignRequestPayload(BaseModel):
+    """Payload for `design-request` (Interpreter → Designer).
+
+    Same shape as `behaviour-to-implement` — the Designer, like the Analyst,
+    only ever sees the need in the Owner's own words.
+    """
+
+    text: str
+
+
+class DesignResultPayload(BaseModel):
+    """Payload for `design-result` (Designer → Interpreter)."""
+
+    artifact_ref: str
+    description: str
+    iterations: int
+
+
 # ---------------------------------------------------------------------------
 # Message envelope
 # ---------------------------------------------------------------------------
@@ -129,6 +147,9 @@ PAYLOAD_MODEL_BY_TYPE: dict[str, type[BaseModel]] = {
     "evidence": EvidencePayload,
     "verdict": VerdictPayload,
     "behaviour-status": BehaviourStatusPayload,
+    # Designer types
+    "design-request": DesignRequestPayload,
+    "design-result": DesignResultPayload,
     # Owner ↔ Interpreter types
     "problem": OwnerInterpreterPayload,
     "clarification": OwnerInterpreterPayload,

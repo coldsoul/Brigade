@@ -15,6 +15,7 @@ class ProjectConfig(BaseModel):
 class RoleConfig(BaseModel):
     model: str | None = None
     harness: str | None = None
+    review_tool: str = "auto"  # designer-only: "auto" | "lavish" | "basic"
 
 
 class CapabilitiesConfig(BaseModel):

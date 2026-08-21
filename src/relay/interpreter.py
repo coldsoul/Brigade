@@ -68,6 +68,44 @@ def check_status_impl(relay_dir: Path, behaviour_id: str) -> dict:
     return {"outcome": "pending", "summary": None}
 
 
+def dispatch_design_request_impl(relay_dir: Path, text: str) -> dict:
+    """Construct and deliver a `design-request` message to the Designer.
+
+    Returns the new behaviour_id immediately — never blocks.
+    """
+    behaviour_id = str(ULID())
+    msg = Message(
+        id=str(ULID()),
+        type="design-request",
+        from_role="interpreter",
+        to_role="designer",
+        behaviour_id=behaviour_id,
+        created_at=datetime.now(timezone.utc),
+        schema_version=1,
+        payload={"text": text},
+    )
+    deliver(msg, relay_dir)
+    return {"behaviour_id": behaviour_id}
+
+
+def check_design_status_impl(relay_dir: Path, behaviour_id: str) -> dict:
+    """Poll the interpreter inbox for a `design-result` for *behaviour_id*.
+
+    Consumes (clears the pointer) when found.  Returns a `pending` status when
+    not yet present.
+    """
+    for msg_id in list_inbox("interpreter", relay_dir):
+        msg = read_message(msg_id, relay_dir)
+        if msg.type == "design-result" and msg.behaviour_id == behaviour_id:
+            consume("interpreter", msg_id, relay_dir)
+            return {
+                "status": "done",
+                "artifact_ref": msg.payload.get("artifact_ref"),
+                "description": msg.payload.get("description"),
+            }
+    return {"status": "pending", "artifact_ref": None, "description": None}
+
+
 def log_conversation_impl(
     relay_dir: Path, msg_type: str, text: str, reply_to: str | None = None
 ) -> str:

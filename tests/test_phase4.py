@@ -164,12 +164,18 @@ class TestLogConversation:
 # ---------------------------------------------------------------------------
 
 class TestMCPServer:
-    def test_three_tools_registered(self):
+    def test_all_tools_registered(self):
         from relay.mcp_server import mcp
 
         tools = asyncio.run(mcp.list_tools())
         names = {t.name for t in tools}
-        assert names == {"dispatch_behaviour", "check_status", "log_conversation"}
+        assert names == {
+            "dispatch_behaviour",
+            "check_status",
+            "dispatch_design_request",
+            "check_design_status",
+            "log_conversation",
+        }
 
 
 # ---------------------------------------------------------------------------

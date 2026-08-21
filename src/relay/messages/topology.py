@@ -12,6 +12,8 @@ TOPOLOGY: dict[tuple[str, str], set[str]] = {
     ("builder", "examiner"): {"evidence"},
     ("examiner", "analyst"): {"behaviour-status"},
     ("analyst", "interpreter"): {"behaviour-status"},
+    ("interpreter", "designer"): {"design-request"},
+    ("designer", "interpreter"): {"design-result"},
 }
 
 # Owner ↔ Interpreter types — valid edges but never mailbox-routed.
