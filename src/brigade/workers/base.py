@@ -120,6 +120,25 @@ class RoleWorker:
             extra={"behaviour_id": reply.behaviour_id},
         )
 
+    def _log_harness(self, behaviour_id: str, result, duration: float) -> Path:
+        """Persist full harness output to a log file and log a one-line summary."""
+        logs_dir = self.brigade_dir / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        path = logs_dir / f"harness-{self.role}-{str(ULID())}.log"
+        path.write_text(
+            f"command: {' '.join(result.command)}\n"
+            f"exit_code: {result.exit_code}\n"
+            f"duration: {duration:.1f}s\n\n"
+            f"--- stdout ---\n{result.stdout}\n"
+            f"\n--- stderr ---\n{result.stderr}\n"
+        )
+        self.logger.info(
+            "harness exited %s in %.1fs — %s",
+            result.exit_code, duration, path,
+            extra={"behaviour_id": behaviour_id},
+        )
+        return path
+
     def _model_name(self) -> str:
         model = self.config.roles.get(self.role)
         if model is None or model.model is None:

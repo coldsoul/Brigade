@@ -8,6 +8,7 @@ HTML/CSS concepts, gated by a human review loop rather than a pass/fail verdict.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from brigade.harness import HarnessRunner
@@ -72,7 +73,7 @@ class DesignerWorker(RoleWorker):
         description = "a visual concept direction"
 
         while iterations < max_loops:
-            artifact_path, description = self._generate(worktree, text, feedback)
+            artifact_path, description = self._generate(worktree, text, feedback, behaviour_id)
             iterations += 1
             result = adapter.review(str(artifact_path))
             if result == APPROVED:
@@ -95,7 +96,7 @@ class DesignerWorker(RoleWorker):
     # ------------------------------------------------------------------
 
     def _generate(
-        self, worktree: Path, text: str, feedback: str | None
+        self, worktree: Path, text: str, feedback: str | None, behaviour_id: str
     ) -> tuple[Path, str]:
         harness = self._designer_harness()
         model = self._designer_model()
@@ -131,10 +132,11 @@ class DesignerWorker(RoleWorker):
 
         prompt = self._build_prompt(instruction)
 
+        start = time.monotonic()
         result = self.harness_runner.run(harness, model, worktree, prompt)
-        self.logger.debug("harness exited %s", result.exit_code)
-        if result.stderr:
-            self.logger.debug("harness stderr:\n%s", result.stderr.strip()[:2000])
+        duration = time.monotonic() - start
+
+        self._log_harness(behaviour_id, result, duration)
 
         description = self._read_description(summary_path)
         return artifact_path, description

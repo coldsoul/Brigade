@@ -9,6 +9,7 @@ back the evidence report the harness wrote before packaging it into an
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from brigade.harness import HarnessRunner
@@ -59,7 +60,7 @@ class BuilderWorker(RoleWorker):
             f"EXPECTATIONS:\n{json.dumps(expectations, indent=2)}\n\n"
             f"INTEGRATION EXPECTATION:\n{integration}"
         )
-        evidence = self._run_harness(worktree, prompt, expectation_ids)
+        evidence = self._run_harness(worktree, prompt, expectation_ids, msg.behaviour_id)
         return build_reply(msg, "examiner", "evidence", evidence)
 
     def _handle_verdict(self, msg: Message) -> Message:
@@ -73,7 +74,7 @@ class BuilderWorker(RoleWorker):
             "by running something.\n\n"
             f"UNMET EXPECTATIONS:\n{json.dumps(unmet, indent=2)}"
         )
-        evidence = self._run_harness(worktree, prompt, expectation_ids)
+        evidence = self._run_harness(worktree, prompt, expectation_ids, msg.behaviour_id)
         return build_reply(msg, "examiner", "evidence", evidence)
 
     # ------------------------------------------------------------------
@@ -81,7 +82,8 @@ class BuilderWorker(RoleWorker):
     # ------------------------------------------------------------------
 
     def _run_harness(
-        self, worktree: Path, prompt: str, expectation_ids: list[str]
+        self, worktree: Path, prompt: str, expectation_ids: list[str],
+        behaviour_id: str,
     ) -> dict:
         harness = self._builder_harness()
         model = self._builder_model()
@@ -100,14 +102,11 @@ class BuilderWorker(RoleWorker):
             f"object to this exact path:\n{evidence_path}"
         )
 
+        start = time.monotonic()
         result = self.harness_runner.run(harness, model, worktree, full_prompt)
+        duration = time.monotonic() - start
 
-        # Log the full harness output for debugging (never goes into the ledger).
-        self.logger.debug("harness exited %s", result.exit_code)
-        if result.stdout:
-            self.logger.debug("harness stdout:\n%s", result.stdout.strip()[:2000])
-        if result.stderr:
-            self.logger.debug("harness stderr:\n%s", result.stderr.strip()[:2000])
+        self._log_harness(behaviour_id, result, duration)
 
         return self._read_evidence(evidence_path, result, expectation_ids)
 

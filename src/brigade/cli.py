@@ -185,6 +185,7 @@ GITIGNORE_ENTRIES = """\
 .brigade/state.json
 .brigade/work/
 .brigade/evidence/
+.brigade/logs/
 """
 
 
