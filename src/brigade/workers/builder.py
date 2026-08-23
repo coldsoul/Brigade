@@ -103,11 +103,11 @@ class BuilderWorker(RoleWorker):
         result = self.harness_runner.run(harness, model, worktree, full_prompt)
 
         # Log the full harness output for debugging (never goes into the ledger).
-        print(f"[{self.role}] harness exited {result.exit_code}")
+        self.logger.debug("harness exited %s", result.exit_code)
         if result.stdout:
-            print(f"[{self.role}] harness stdout:\n{result.stdout.strip()[:2000]}")
+            self.logger.debug("harness stdout:\n%s", result.stdout.strip()[:2000])
         if result.stderr:
-            print(f"[{self.role}] harness stderr:\n{result.stderr.strip()[:2000]}")
+            self.logger.debug("harness stderr:\n%s", result.stderr.strip()[:2000])
 
         return self._read_evidence(evidence_path, result, expectation_ids)
 
@@ -122,7 +122,7 @@ class BuilderWorker(RoleWorker):
             # The harness failed to produce a valid evidence report.  Produce a
             # conservative narrative fallback so the Examiner has something to
             # judge rather than the worker silently dropping the round.
-            print(f"[{self.role}] no valid evidence written: {exc}")
+            self.logger.warning("no valid evidence written: %s", exc)
             return self._fallback_evidence(result, expectation_ids)
 
     def _fallback_evidence(

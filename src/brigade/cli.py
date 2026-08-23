@@ -358,6 +358,7 @@ def up():
 
     from brigade.config import load_config
     from brigade.llm import LiteLLMRouter
+    from brigade.logging_config import configure_logging
     from brigade.sentinel import Sentinel
     from brigade.workers import (
         AnalystWorker,
@@ -369,6 +370,7 @@ def up():
     brigade_dir = _require_brigade_project()
     config = load_config(brigade_dir)
     router = LiteLLMRouter()
+    configure_logging()
 
     workers = [
         AnalystWorker(config, router, brigade_dir),

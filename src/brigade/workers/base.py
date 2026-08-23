@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -71,6 +72,7 @@ class RoleWorker:
         self.brigade_dir = brigade_dir
         self.poll_interval = poll_interval
         self.persona = load_persona(self.role, brigade_dir)
+        self.logger = logging.getLogger(self.role)
 
     # ------------------------------------------------------------------
     # Public API
@@ -104,13 +106,13 @@ class RoleWorker:
     # ------------------------------------------------------------------
 
     def _dispatch(self, msg: Message) -> None:
-        print(f"[{self.role}] consuming {msg.type} ({msg.id})")
+        self.logger.info("consuming %s (%s)", msg.type, msg.id)
         reply = self.process(msg)
         if reply is None:
             return
         validate(reply)
         deliver(reply, self.brigade_dir)
-        print(f"[{self.role}] produced {reply.type} → {reply.to_role} ({reply.id})")
+        self.logger.info("produced %s → %s (%s)", reply.type, reply.to_role, reply.id)
 
     def _model_name(self) -> str:
         model = self.config.roles.get(self.role)

@@ -8,6 +8,7 @@ advises — it never writes into another role's inbox and never sends directives
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from datetime import datetime, timezone
@@ -20,6 +21,8 @@ from ulid import ULID
 from brigade.messages import Message
 from brigade.model_calls import ModelCallError, call_for_schema
 from brigade.storage import list_ledger, write_message
+
+logger = logging.getLogger("sentinel")
 
 POLL_INTERVAL = 1.0
 DEFAULT_SCAN_EVERY = 10
@@ -385,7 +388,7 @@ class Sentinel:
                 label="leak verdict",
             )
         except ModelCallError as exc:
-            print(f"[sentinel] leak confirmation failed, trusting heuristic: {exc}")
+            logger.warning("leak confirmation failed, trusting heuristic: %s", exc)
             return True
         return bool(verdict.get("leak"))
 
@@ -401,7 +404,7 @@ class Sentinel:
             payload={"concerns": concerns, "severity": "advisory"},
         )
         write_message(msg, self.brigade_dir)
-        print(f"[sentinel] emitted advisory with {len(concerns)} concern(s)")
+        logger.info("emitted advisory with %d concern(s)", len(concerns))
         return [msg]
 
 

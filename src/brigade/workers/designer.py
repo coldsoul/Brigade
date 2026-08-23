@@ -132,9 +132,9 @@ class DesignerWorker(RoleWorker):
         prompt = self._build_prompt(instruction)
 
         result = self.harness_runner.run(harness, model, worktree, prompt)
-        print(f"[{self.role}] harness exited {result.exit_code}")
+        self.logger.debug("harness exited %s", result.exit_code)
         if result.stderr:
-            print(f"[{self.role}] harness stderr:\n{result.stderr.strip()[:2000]}")
+            self.logger.debug("harness stderr:\n%s", result.stderr.strip()[:2000])
 
         description = self._read_description(summary_path)
         return artifact_path, description
