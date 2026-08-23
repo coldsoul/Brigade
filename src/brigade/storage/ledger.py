@@ -1,6 +1,6 @@
 """Ledger — permanent, append-only message store.
 
-Every message is written once as a JSON file under `.relay/ledger/<ulid>.json`.
+Every message is written once as a JSON file under `.brigade/ledger/<ulid>.json`.
 Writes are atomic (temp file + rename).  Nothing in this module ever modifies
 or deletes a committed ledger entry.
 """
@@ -10,18 +10,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from relay.messages.models import Message
-from relay.messages.validator import validate
+from brigade.messages.models import Message
+from brigade.messages.validator import validate
 
 
-def write_message(message: Message, relay_dir: Path) -> Path:
+def write_message(message: Message, brigade_dir: Path) -> Path:
     """Validate *message* and write it atomically to the ledger.
 
     Returns the path of the committed ledger file.
     """
     validate(message)
 
-    ledger_dir = relay_dir / "ledger"
+    ledger_dir = brigade_dir / "ledger"
     ledger_dir.mkdir(parents=True, exist_ok=True)
 
     payload = message.model_dump(mode="json")
@@ -36,9 +36,9 @@ def write_message(message: Message, relay_dir: Path) -> Path:
     return final_path
 
 
-def read_message(message_id: str, relay_dir: Path) -> Message:
+def read_message(message_id: str, brigade_dir: Path) -> Message:
     """Read and reconstruct a `Message` from the ledger by its ULID."""
-    path = relay_dir / "ledger" / f"{message_id}.json"
+    path = brigade_dir / "ledger" / f"{message_id}.json"
     if not path.is_file():
         raise FileNotFoundError(f"No ledger entry for message {message_id}")
 
@@ -47,14 +47,14 @@ def read_message(message_id: str, relay_dir: Path) -> Message:
 
 
 def list_ledger(
-    relay_dir: Path, *, behaviour_id: str | None = None
+    brigade_dir: Path, *, behaviour_id: str | None = None
 ) -> list[Message]:
     """Return every message in the ledger, chronologically (by ULID).
 
     When *behaviour_id* is given, only messages belonging to that behaviour
     are returned.
     """
-    ledger_dir = relay_dir / "ledger"
+    ledger_dir = brigade_dir / "ledger"
     if not ledger_dir.is_dir():
         return []
 

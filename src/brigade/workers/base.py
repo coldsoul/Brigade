@@ -9,12 +9,12 @@ from pathlib import Path
 from pydantic import BaseModel
 from ulid import ULID
 
-from relay.config import Config
-from relay.llm import ModelRouter
-from relay.messages import Message, validate
-from relay.model_calls import ModelCallError, call_for_schema
-from relay.personas import load_persona
-from relay.storage import consume, deliver, list_inbox
+from brigade.config import Config
+from brigade.llm import ModelRouter
+from brigade.messages import Message, validate
+from brigade.model_calls import ModelCallError, call_for_schema
+from brigade.personas import load_persona
+from brigade.storage import consume, deliver, list_inbox
 
 POLL_INTERVAL = 0.5
 
@@ -63,14 +63,14 @@ class RoleWorker:
         self,
         config: Config,
         router: ModelRouter,
-        relay_dir: Path,
+        brigade_dir: Path,
         poll_interval: float = POLL_INTERVAL,
     ):
         self.config = config
         self.router = router
-        self.relay_dir = relay_dir
+        self.brigade_dir = brigade_dir
         self.poll_interval = poll_interval
-        self.persona = load_persona(self.role, relay_dir)
+        self.persona = load_persona(self.role, brigade_dir)
 
     # ------------------------------------------------------------------
     # Public API
@@ -87,11 +87,11 @@ class RoleWorker:
 
         Returns True if at least one message was processed.
         """
-        ids = list_inbox(self.role, self.relay_dir)
+        ids = list_inbox(self.role, self.brigade_dir)
         if not ids:
             return False
         for msg_id in ids:
-            msg = consume(self.role, msg_id, self.relay_dir)
+            msg = consume(self.role, msg_id, self.brigade_dir)
             self._dispatch(msg)
         return True
 
@@ -109,7 +109,7 @@ class RoleWorker:
         if reply is None:
             return
         validate(reply)
-        deliver(reply, self.relay_dir)
+        deliver(reply, self.brigade_dir)
         print(f"[{self.role}] produced {reply.type} → {reply.to_role} ({reply.id})")
 
     def _model_name(self) -> str:

@@ -4,7 +4,7 @@ Read `00-project-overview.md` and all prior phase documents first. The Sentinel 
 
 ## Goal
 
-A periodic auditor that scans `.relay/ledger/` for contract violations — leaked implementation detail, expectations quietly reworded to match convenient evidence, evidence whose confidence tier doesn't match its actual content, and systemic loop trouble — and surfaces what it finds. For this phase, it only ever advises or warns; it does not act.
+A periodic auditor that scans `.brigade/ledger/` for contract violations — leaked implementation detail, expectations quietly reworded to match convenient evidence, evidence whose confidence tier doesn't match its actual content, and systemic loop trouble — and surfaces what it finds. For this phase, it only ever advises or warns; it does not act.
 
 ## New topology additions
 
@@ -24,8 +24,8 @@ sentinel → (any role) : advisory, warning
 
 ### 1. Read-only ledger scanner
 
-- `scan_ledger(since: str | None) -> list[Message]`: reads all ledger entries, optionally only those newer than a given `id` (ULIDs sort chronologically, so this is a cheap cursor). The Sentinel should never write to or delete anything under `.relay/ledger/mailboxes/` — it only reads the ledger and writes new `advisory`/`warning` entries of its own.
-- Run as its own async task inside `relay up` (Phase 0/2's worker infrastructure), on a cadence — "every N new ledger messages since the last scan" is a better fit for this file-based design than a wall-clock timer; make N configurable in `config.toml` under a new `[roles.sentinel]` section, with a sensible default (e.g. every 10 new messages).
+- `scan_ledger(since: str | None) -> list[Message]`: reads all ledger entries, optionally only those newer than a given `id` (ULIDs sort chronologically, so this is a cheap cursor). The Sentinel should never write to or delete anything under `.brigade/ledger/mailboxes/` — it only reads the ledger and writes new `advisory`/`warning` entries of its own.
+- Run as its own async task inside `brigade up` (Phase 0/2's worker infrastructure), on a cadence — "every N new ledger messages since the last scan" is a better fit for this file-based design than a wall-clock timer; make N configurable in `config.toml` under a new `[roles.sentinel]` section, with a sensible default (e.g. every 10 new messages).
 
 ### 2. The four checks
 
@@ -39,8 +39,8 @@ Each check is its own function, taking a batch of new ledger messages plus enoug
 ### 3. Surfacing results
 
 - Every `advisory`/`warning` the Sentinel produces is written to the ledger like any other message (full audit trail, no special-casing).
-- Extend `relay status` (stubbed in Phase 0) to show a summary of open Sentinel flags — count by severity and category is enough for this phase, no need for a full TUI.
-- No message is ever delivered into another role's inbox in this phase — `advisory`/`warning` are informational only, visible via `relay status` and the ledger itself, and require you to act on them manually if you choose to.
+- Extend `brigade status` (stubbed in Phase 0) to show a summary of open Sentinel flags — count by severity and category is enough for this phase, no need for a full TUI.
+- No message is ever delivered into another role's inbox in this phase — `advisory`/`warning` are informational only, visible via `brigade status` and the ledger itself, and require you to act on them manually if you choose to.
 
 ### 4. Model configuration
 
@@ -55,11 +55,11 @@ Each check is its own function, taking a batch of new ledger messages plus enoug
 
 ## Acceptance criteria
 
-- [ ] `relay up` runs the Sentinel as an additional async task with no change to how the existing roles' workers behave.
+- [ ] `brigade up` runs the Sentinel as an additional async task with no change to how the existing roles' workers behave.
 - [ ] Running the Sentinel against a ledger from an earlier real dry run (Phase 5) with no injected violations produces zero or near-zero false-positive flags — verify by hand-reviewing what it flags, if anything.
 - [ ] Deliberately crafting a `behaviour` message with an obvious implementation-detail leak (hand-place it in the ledger, bypassing the Analyst) is caught by the leakage check on the next scan.
 - [ ] Deliberately crafting two consecutive `expectation` messages for the same `behaviour_id` where the second's wording conveniently narrows to match a prior `evidence.claim` is caught by the gamed-expectation check.
 - [ ] An `evidence` message marked `"executed"` with an empty `raw_output` is caught by the confidence-mismatch check.
 - [ ] Simulating several behaviours that all hit `max_loops` for the same role produces a single systemic-loop `advisory`, not N separate per-behaviour flags.
-- [ ] `relay status` shows an accurate summary of open flags by severity/category after a scan.
+- [ ] `brigade status` shows an accurate summary of open flags by severity/category after a scan.
 - [ ] No `directive`-type message exists anywhere in the codebase for this phase — confirm the schema only allows `advisory`/`warning` as valid Sentinel-originated types for now.

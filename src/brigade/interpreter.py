@@ -1,8 +1,8 @@
 """Interpreter tool logic — the core of the MCP server, kept free of MCP glue.
 
-These functions are pure (stateless) and take `relay_dir` explicitly so they
+These functions are pure (stateless) and take `brigade_dir` explicitly so they
 can be unit-tested without a running MCP server.  The MCP server layer resolves
-the relay directory and wraps them as tools.
+the brigade directory and wraps them as tools.
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ from pathlib import Path
 
 from ulid import ULID
 
-from relay.messages import Message
-from relay.storage import consume, deliver, list_inbox, read_message, write_message
+from brigade.messages import Message
+from brigade.storage import consume, deliver, list_inbox, read_message, write_message
 
 # Owner ↔ Interpreter message types → (from_role, to_role).  Inferred from the
 # type: "problem" comes from the Owner, "roadmap"/"increment"/"result" go to the
@@ -31,7 +31,7 @@ CONVERSATION_DIRECTION: dict[str, tuple[str, str]] = {
 }
 
 
-def dispatch_behaviour_impl(relay_dir: Path, text: str) -> dict:
+def dispatch_behaviour_impl(brigade_dir: Path, text: str) -> dict:
     """Construct, validate, and deliver a `behaviour-to-implement` message.
 
     Returns the new behaviour_id immediately — never blocks.
@@ -47,20 +47,20 @@ def dispatch_behaviour_impl(relay_dir: Path, text: str) -> dict:
         schema_version=1,
         payload={"text": text},
     )
-    deliver(msg, relay_dir)
+    deliver(msg, brigade_dir)
     return {"behaviour_id": behaviour_id}
 
 
-def check_status_impl(relay_dir: Path, behaviour_id: str) -> dict:
+def check_status_impl(brigade_dir: Path, behaviour_id: str) -> dict:
     """Poll the interpreter inbox for a `behaviour-status` for *behaviour_id*.
 
     Consumes (clears the pointer) when found, keeping the ledger entry.
     Returns {"outcome": "pending", "summary": None} when not yet present.
     """
-    for msg_id in list_inbox("interpreter", relay_dir):
-        msg = read_message(msg_id, relay_dir)
+    for msg_id in list_inbox("interpreter", brigade_dir):
+        msg = read_message(msg_id, brigade_dir)
         if msg.type == "behaviour-status" and msg.payload.get("behaviour_id") == behaviour_id:
-            consume("interpreter", msg_id, relay_dir)
+            consume("interpreter", msg_id, brigade_dir)
             return {
                 "outcome": msg.payload.get("outcome", "pending"),
                 "summary": msg.payload.get("summary"),
@@ -68,7 +68,7 @@ def check_status_impl(relay_dir: Path, behaviour_id: str) -> dict:
     return {"outcome": "pending", "summary": None}
 
 
-def dispatch_design_request_impl(relay_dir: Path, text: str) -> dict:
+def dispatch_design_request_impl(brigade_dir: Path, text: str) -> dict:
     """Construct and deliver a `design-request` message to the Designer.
 
     Returns the new behaviour_id immediately — never blocks.
@@ -84,20 +84,20 @@ def dispatch_design_request_impl(relay_dir: Path, text: str) -> dict:
         schema_version=1,
         payload={"text": text},
     )
-    deliver(msg, relay_dir)
+    deliver(msg, brigade_dir)
     return {"behaviour_id": behaviour_id}
 
 
-def check_design_status_impl(relay_dir: Path, behaviour_id: str) -> dict:
+def check_design_status_impl(brigade_dir: Path, behaviour_id: str) -> dict:
     """Poll the interpreter inbox for a `design-result` for *behaviour_id*.
 
     Consumes (clears the pointer) when found.  Returns a `pending` status when
     not yet present.
     """
-    for msg_id in list_inbox("interpreter", relay_dir):
-        msg = read_message(msg_id, relay_dir)
+    for msg_id in list_inbox("interpreter", brigade_dir):
+        msg = read_message(msg_id, brigade_dir)
         if msg.type == "design-result" and msg.behaviour_id == behaviour_id:
-            consume("interpreter", msg_id, relay_dir)
+            consume("interpreter", msg_id, brigade_dir)
             return {
                 "status": "done",
                 "artifact_ref": msg.payload.get("artifact_ref"),
@@ -107,7 +107,7 @@ def check_design_status_impl(relay_dir: Path, behaviour_id: str) -> dict:
 
 
 def log_conversation_impl(
-    relay_dir: Path, msg_type: str, text: str, reply_to: str | None = None
+    brigade_dir: Path, msg_type: str, text: str, reply_to: str | None = None
 ) -> str:
     """Write a Owner↔Interpreter message directly to the ledger (no inbox).
 
@@ -125,5 +125,5 @@ def log_conversation_impl(
         schema_version=1,
         payload={"text": text},
     )
-    write_message(msg, relay_dir)
+    write_message(msg, brigade_dir)
     return msg.id

@@ -1,7 +1,7 @@
-"""Sentinel — a periodic, read-only auditor of the relay ledger.
+"""Sentinel — a periodic, read-only auditor of the brigade ledger.
 
 Unlike the other roles, the Sentinel does not consume from an inbox in the
-linear chain.  It scans `.relay/ledger/` in batches and surfaces contract
+linear chain.  It scans `.brigade/ledger/` in batches and surfaces contract
 violations as `advisory` (or `warning`) messages.  For this phase it only
 advises — it never writes into another role's inbox and never sends directives.
 """
@@ -17,9 +17,9 @@ from pathlib import Path
 from pydantic import BaseModel
 from ulid import ULID
 
-from relay.messages import Message
-from relay.model_calls import ModelCallError, call_for_schema
-from relay.storage import list_ledger, write_message
+from brigade.messages import Message
+from brigade.model_calls import ModelCallError, call_for_schema
+from brigade.storage import list_ledger, write_message
 
 POLL_INTERVAL = 1.0
 DEFAULT_SCAN_EVERY = 10
@@ -306,13 +306,13 @@ class Sentinel:
         self,
         config,
         router,
-        relay_dir: Path,
+        brigade_dir: Path,
         scan_every: int | None = None,
         poll_interval: float = POLL_INTERVAL,
     ):
         self.config = config
         self.router = router  # used for model-backed leak confirmation
-        self.relay_dir = relay_dir
+        self.brigade_dir = brigade_dir
         sentinel_cfg = config.roles.get("sentinel")
         self.scan_every = (
             scan_every
@@ -330,14 +330,14 @@ class Sentinel:
             time.sleep(self.poll_interval)
 
     def _new_count(self) -> int:
-        full = list_ledger(self.relay_dir)
+        full = list_ledger(self.brigade_dir)
         if self.cursor is None:
             return len(full)
         return sum(1 for m in full if m.id > self.cursor)
 
     def scan_once(self) -> list[Message]:
         """Run one scan over new messages and emit advisories for any findings."""
-        full = list_ledger(self.relay_dir)
+        full = list_ledger(self.brigade_dir)
         if not full:
             return []
 
@@ -400,15 +400,15 @@ class Sentinel:
             schema_version=1,
             payload={"concerns": concerns, "severity": "advisory"},
         )
-        write_message(msg, self.relay_dir)
+        write_message(msg, self.brigade_dir)
         print(f"[sentinel] emitted advisory with {len(concerns)} concern(s)")
         return [msg]
 
 
-def sentinel_summary(relay_dir: Path) -> dict[tuple[str, str], int]:
+def sentinel_summary(brigade_dir: Path) -> dict[tuple[str, str], int]:
     """Count open Sentinel flags by (severity, category)."""
     counts: dict[tuple[str, str], int] = {}
-    for m in list_ledger(relay_dir):
+    for m in list_ledger(brigade_dir):
         if m.type not in ("advisory", "warning"):
             continue
         severity = str(m.payload.get("severity", "advisory"))

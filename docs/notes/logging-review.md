@@ -1,6 +1,6 @@
-# Relay `up` — Logging Review & Improvement Options
+# Brigade `up` — Logging Review & Improvement Options
 
-This document reviews the logging produced by `relay up` and lists options for improving it.
+This document reviews the logging produced by `brigade up` and lists options for improving it.
 It is a proposal, not an implementation plan — nothing here is implemented yet.
 
 ## Current state
@@ -9,7 +9,7 @@ All logging is raw `print()` / `click.echo()` with no logging framework.
 The typical output looks like:
 
 ```
-Relay workers started: analyst, examiner, builder, designer, sentinel
+Brigade workers started: analyst, examiner, builder, designer, sentinel
 Press Ctrl+C to stop.
 [builder] consuming expectation (01M0JVN2JDNJAQXGQCT1EYKGK5)
 [builder] harness exited 0
@@ -37,7 +37,7 @@ Replace `print` with `logging`, one logger per role/module, a formatter like `%(
 - *Gain:* timestamps, levels, and filtering for free. This is the base every other option builds on.
 
 ### B — Verbosity flags
-`relay up --quiet` (warnings/errors only) / `--verbose` (`DEBUG`) / default `INFO`.
+`brigade up --quiet` (warnings/errors only) / `--verbose` (`DEBUG`) / default `INFO`.
 - *Cost:* low.
 - *Gain:* harness dumps become `DEBUG`-only, so normal runs stay clean.
 
@@ -49,7 +49,7 @@ Then `grep bid=01M0JVME…` replays one behaviour's whole path.
 
 ### D — Harness output to files, not the stream
 Stop inline-dumping `stdout`/`stderr`.
-Write the full harness output to a per-run file (e.g. `.relay/logs/builder-<msg_id>.log`), and log a one-line summary plus the file path.
+Write the full harness output to a per-run file (e.g. `.brigade/logs/builder-<msg_id>.log`), and log a one-line summary plus the file path.
 - *Cost:* low.
 - *Gain:* a readable terminal, full output preserved with no truncation, still inspectable on failure.
 
@@ -59,7 +59,7 @@ Emit one JSON object per event (`{ts, level, role, event, behaviour_id, message_
 - *Gain:* machine-parseable output (`jq`, `grep`) and post-hoc analysis; pairs naturally with C.
 
 ### F — Log file + rotation
-Route logs to `.relay/logs/relay.log` (or per-role files) with a `RotatingFileHandler`, in addition to the console.
+Route logs to `.brigade/logs/brigade.log` (or per-role files) with a `RotatingFileHandler`, in addition to the console.
 - *Cost:* low.
 - *Gain:* operational history survives terminal exit and answers "what happened while I was away."
 
@@ -69,7 +69,7 @@ Log durations on key hops ("builder harness took 43s", "examiner 2.1s").
 - *Gain:* directly answers "is it slow or hung?" and makes latency regressions measurable.
 
 ### H — Live status TUI (dashboard)
-Keep detailed logs in a file and render a live high-level panel (inbox depths, in-flight behaviour, current role activity, sentinel flag count) refreshed in place — effectively `relay status`, but live.
+Keep detailed logs in a file and render a live high-level panel (inbox depths, in-flight behaviour, current role activity, sentinel flag count) refreshed in place — effectively `brigade status`, but live.
 - *Cost:* medium–high.
 - *Gain:* a "what is happening right now" view decoupled from the noisy event stream; best as a later layer on top of A–D.
 

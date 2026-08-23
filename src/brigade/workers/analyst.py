@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from relay.messages import (
+from brigade.messages import (
     BehaviourPayload,
     BehaviourStatusPayload,
     Message,
 )
-from relay.workers.base import RoleWorker, build_reply
+from brigade.workers.base import RoleWorker, build_reply
 
 
 class AnalystWorker(RoleWorker):

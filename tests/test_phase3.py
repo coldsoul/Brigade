@@ -11,12 +11,12 @@ from pathlib import Path
 import pytest
 from ulid import ULID
 
-from relay.config import Config
-from relay.harness import HarnessResult
-from relay.messages import Message
-from relay.storage import consume, deliver, list_inbox
-from relay.worktree import current_branch, has_worktree
-from relay.workers import BuilderWorker
+from brigade.config import Config
+from brigade.harness import HarnessResult
+from brigade.messages import Message
+from brigade.storage import consume, deliver, list_inbox
+from brigade.worktree import current_branch, has_worktree
+from brigade.workers import BuilderWorker
 
 
 # ---------------------------------------------------------------------------
@@ -61,8 +61,8 @@ def _make_config() -> Config:
 
 
 @pytest.fixture
-def relay_dir(tmp_path: Path) -> Path:
-    """A temp project with a real git repo and .relay/ layout."""
+def brigade_dir(tmp_path: Path) -> Path:
+    """A temp project with a real git repo and .brigade/ layout."""
     project_root = tmp_path / "project"
     project_root.mkdir()
 
@@ -76,7 +76,7 @@ def relay_dir(tmp_path: Path) -> Path:
         capture_output=True,
     )
 
-    d = project_root / ".relay"
+    d = project_root / ".brigade"
     (d / "ledger").mkdir(parents=True)
     for role in ("analyst", "examiner", "builder", "interpreter"):
         (d / "mailboxes" / role / "inbox").mkdir(parents=True)
@@ -138,9 +138,9 @@ def _executed_evidence() -> dict:
 # ---------------------------------------------------------------------------
 
 class TestBuilder:
-    def test_expectation_creates_worktree_and_branch(self, relay_dir):
+    def test_expectation_creates_worktree_and_branch(self, brigade_dir):
         harness = FakeHarness(evidence_payload=_executed_evidence())
-        worker = BuilderWorker(_make_config(), None, relay_dir, harness_runner=harness)
+        worker = BuilderWorker(_make_config(), None, brigade_dir, harness_runner=harness)
 
         behaviour_id = _id()
         incoming = _make_message(
@@ -155,17 +155,17 @@ class TestBuilder:
             },
             behaviour_id=behaviour_id,
         )
-        deliver(incoming, relay_dir)
+        deliver(incoming, brigade_dir)
 
         worker.run_once()
 
-        worktree = relay_dir.parent / ".relay" / "work" / behaviour_id
-        assert has_worktree(relay_dir.parent, behaviour_id)
-        assert current_branch(worktree) == f"relay/{behaviour_id}"
+        worktree = brigade_dir.parent / ".brigade" / "work" / behaviour_id
+        assert has_worktree(brigade_dir.parent, behaviour_id)
+        assert current_branch(worktree) == f"brigade/{behaviour_id}"
 
-    def test_harness_invoked_inside_worktree(self, relay_dir):
+    def test_harness_invoked_inside_worktree(self, brigade_dir):
         harness = FakeHarness(evidence_payload=_executed_evidence())
-        worker = BuilderWorker(_make_config(), None, relay_dir, harness_runner=harness)
+        worker = BuilderWorker(_make_config(), None, brigade_dir, harness_runner=harness)
 
         behaviour_id = _id()
         incoming = _make_message(
@@ -183,11 +183,11 @@ class TestBuilder:
         worker.process(incoming)
 
         assert len(harness.workdirs) == 1
-        assert harness.workdirs[0] == relay_dir.parent / ".relay" / "work" / behaviour_id
+        assert harness.workdirs[0] == brigade_dir.parent / ".brigade" / "work" / behaviour_id
 
-    def test_executed_evidence_round_trip(self, relay_dir):
+    def test_executed_evidence_round_trip(self, brigade_dir):
         harness = FakeHarness(evidence_payload=_executed_evidence())
-        worker = BuilderWorker(_make_config(), None, relay_dir, harness_runner=harness)
+        worker = BuilderWorker(_make_config(), None, brigade_dir, harness_runner=harness)
 
         behaviour_id = _id()
         incoming = _make_message(
@@ -202,24 +202,24 @@ class TestBuilder:
             },
             behaviour_id=behaviour_id,
         )
-        deliver(incoming, relay_dir)
+        deliver(incoming, brigade_dir)
         worker.run_once()
 
-        inbox = list_inbox("examiner", relay_dir)
+        inbox = list_inbox("examiner", brigade_dir)
         assert len(inbox) == 1
-        reply = consume("examiner", inbox[0], relay_dir)
+        reply = consume("examiner", inbox[0], brigade_dir)
         assert reply.type == "evidence"
         item = reply.payload["evidence"][0]
         assert item["confidence"] == "executed"
         assert item["execution"]["command"]
         assert item["execution"]["raw_output"] == "5"
 
-    def test_test_files_touched_are_real(self, relay_dir):
+    def test_test_files_touched_are_real(self, brigade_dir):
         harness = FakeHarness(
             evidence_payload=_executed_evidence(),
             files_to_create={"tests/test_adder.py": "def test_add(): assert add(2,3)==5\n"},
         )
-        worker = BuilderWorker(_make_config(), None, relay_dir, harness_runner=harness)
+        worker = BuilderWorker(_make_config(), None, brigade_dir, harness_runner=harness)
 
         behaviour_id = _id()
         incoming = _make_message(
@@ -234,15 +234,15 @@ class TestBuilder:
             },
             behaviour_id=behaviour_id,
         )
-        deliver(incoming, relay_dir)
+        deliver(incoming, brigade_dir)
         worker.run_once()
 
-        worktree = relay_dir.parent / ".relay" / "work" / behaviour_id
+        worktree = brigade_dir.parent / ".brigade" / "work" / behaviour_id
         assert (worktree / "tests" / "test_adder.py").exists()
 
-    def test_prompt_includes_forbidden_leakage_rule(self, relay_dir):
+    def test_prompt_includes_forbidden_leakage_rule(self, brigade_dir):
         harness = FakeHarness(evidence_payload=_executed_evidence())
-        worker = BuilderWorker(_make_config(), None, relay_dir, harness_runner=harness)
+        worker = BuilderWorker(_make_config(), None, brigade_dir, harness_runner=harness)
 
         incoming = _make_message(
             "expectation",
@@ -260,9 +260,9 @@ class TestBuilder:
         assert "Forbidden leakage" in harness.prompts[0]
         assert "observable outcomes only" in harness.prompts[0]
 
-    def test_verdict_resumes_same_worktree(self, relay_dir):
+    def test_verdict_resumes_same_worktree(self, brigade_dir):
         harness = FakeHarness(evidence_payload=_executed_evidence())
-        worker = BuilderWorker(_make_config(), None, relay_dir, harness_runner=harness)
+        worker = BuilderWorker(_make_config(), None, brigade_dir, harness_runner=harness)
 
         behaviour_id = _id()
         expectation = _make_message(
@@ -296,13 +296,13 @@ class TestBuilder:
         # same worktree reused, not a fresh one
         assert len(harness.workdirs) == 2
         assert harness.workdirs[0] == harness.workdirs[1]
-        worktree = relay_dir.parent / ".relay" / "work" / behaviour_id
-        assert current_branch(worktree) == f"relay/{behaviour_id}"
+        worktree = brigade_dir.parent / ".brigade" / "work" / behaviour_id
+        assert current_branch(worktree) == f"brigade/{behaviour_id}"
 
         # the verdict prompt carried the unmet expectation and reason
         assert "wrong on negatives" in harness.prompts[1]
 
-    def test_non_executable_expectation_marked_narrative(self, relay_dir):
+    def test_non_executable_expectation_marked_narrative(self, brigade_dir):
         narrative = {
             "evidence": [
                 {
@@ -319,7 +319,7 @@ class TestBuilder:
             "test_files_touched": [],
         }
         harness = FakeHarness(evidence_payload=narrative)
-        worker = BuilderWorker(_make_config(), None, relay_dir, harness_runner=harness)
+        worker = BuilderWorker(_make_config(), None, brigade_dir, harness_runner=harness)
 
         incoming = _make_message(
             "expectation",
@@ -336,9 +336,9 @@ class TestBuilder:
 
         assert reply.payload["evidence"][0]["confidence"] == "narrative"
 
-    def test_harness_failure_produces_narrative_fallback(self, relay_dir):
+    def test_harness_failure_produces_narrative_fallback(self, brigade_dir):
         harness = FakeHarness(evidence_payload=None)  # harness fails, writes nothing
-        worker = BuilderWorker(_make_config(), None, relay_dir, harness_runner=harness)
+        worker = BuilderWorker(_make_config(), None, brigade_dir, harness_runner=harness)
 
         incoming = _make_message(
             "expectation",
@@ -356,13 +356,13 @@ class TestBuilder:
         # fallback narrative evidence, never falsely "executed"
         assert reply.payload["evidence"][0]["confidence"] == "narrative"
 
-    def test_verdict_fallback_uses_expectation_id(self, relay_dir):
+    def test_verdict_fallback_uses_expectation_id(self, brigade_dir):
         """Regression: a failing harness on a verdict round must not KeyError.
 
         Verdict `unmet` items are shaped {expectation_id, reason}, not {id, ...}.
         """
         harness = FakeHarness(evidence_payload=None)  # harness fails, writes nothing
-        worker = BuilderWorker(_make_config(), None, relay_dir, harness_runner=harness)
+        worker = BuilderWorker(_make_config(), None, brigade_dir, harness_runner=harness)
 
         verdict = _make_message(
             "verdict",
@@ -383,9 +383,9 @@ class TestBuilder:
         assert item["expectation_id"] == "E1"
         assert item["confidence"] == "narrative"
 
-    def test_crash_survival_worktree_idempotent(self, relay_dir):
+    def test_crash_survival_worktree_idempotent(self, brigade_dir):
         harness = FakeHarness(evidence_payload=_executed_evidence())
-        worker = BuilderWorker(_make_config(), None, relay_dir, harness_runner=harness)
+        worker = BuilderWorker(_make_config(), None, brigade_dir, harness_runner=harness)
 
         behaviour_id = _id()
         incoming = _make_message(
@@ -403,7 +403,7 @@ class TestBuilder:
         worker.process(incoming)
 
         # simulate a "restart": a fresh worker resumes the same behaviour
-        worker2 = BuilderWorker(_make_config(), None, relay_dir, harness_runner=harness)
+        worker2 = BuilderWorker(_make_config(), None, brigade_dir, harness_runner=harness)
         verdict = _make_message(
             "verdict",
             "examiner",
@@ -419,6 +419,6 @@ class TestBuilder:
         worker2.process(verdict)
 
         # worktree survived and was reused, branch intact
-        worktree = relay_dir.parent / ".relay" / "work" / behaviour_id
-        assert has_worktree(relay_dir.parent, behaviour_id)
-        assert current_branch(worktree) == f"relay/{behaviour_id}"
+        worktree = brigade_dir.parent / ".brigade" / "work" / behaviour_id
+        assert has_worktree(brigade_dir.parent, behaviour_id)
+        assert current_branch(worktree) == f"brigade/{behaviour_id}"

@@ -10,11 +10,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from relay.harness import HarnessRunner
-from relay.messages import Message
-from relay.review import APPROVED, ReviewAdapter, select_review_adapter
-from relay.worktree import ensure_worktree, git_exclude
-from relay.workers.base import RoleWorker, WorkerError, build_reply
+from brigade.harness import HarnessRunner
+from brigade.messages import Message
+from brigade.review import APPROVED, ReviewAdapter, select_review_adapter
+from brigade.worktree import ensure_worktree, git_exclude
+from brigade.workers.base import RoleWorker, WorkerError, build_reply
 
 ARTIFACT_FILENAME = "concept.html"
 SUMMARY_FILENAME = "design-summary.json"
@@ -32,16 +32,16 @@ class DesignerWorker(RoleWorker):
         self,
         config,
         router,
-        relay_dir: Path,
+        brigade_dir: Path,
         harness_runner=None,
         review_adapter=None,
         **kwargs,
     ):
         # The Designer never uses the router directly — the harness subprocess
         # manages its own model calls.
-        super().__init__(config, router, relay_dir, **kwargs)
+        super().__init__(config, router, brigade_dir, **kwargs)
         self.harness_runner = harness_runner or HarnessRunner()
-        self.project_root = relay_dir.parent
+        self.project_root = brigade_dir.parent
         self._injected_adapter = review_adapter
         self._resolved_adapter = None
 

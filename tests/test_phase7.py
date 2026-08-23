@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 from ulid import ULID
 
-from relay.config import Config
-from relay.messages import Message, ValidationError, validate
-from relay.messages.models import PAYLOAD_MODEL_BY_TYPE
-from relay.messages.topology import SENTINEL_TYPES
-from relay.sentinel import (
+from brigade.config import Config
+from brigade.messages import Message, ValidationError, validate
+from brigade.messages.models import PAYLOAD_MODEL_BY_TYPE
+from brigade.messages.topology import SENTINEL_TYPES
+from brigade.sentinel import (
     Sentinel,
     check_confidence_mismatch,
     check_gamed_expectation,
@@ -20,7 +20,7 @@ from relay.sentinel import (
     check_systemic_loop,
     sentinel_summary,
 )
-from relay.storage import list_ledger, write_message
+from brigade.storage import list_ledger, write_message
 
 
 # ---------------------------------------------------------------------------
@@ -49,8 +49,8 @@ def _make_config() -> Config:
 
 
 @pytest.fixture
-def relay_dir(tmp_path: Path) -> Path:
-    d = tmp_path / ".relay"
+def brigade_dir(tmp_path: Path) -> Path:
+    d = tmp_path / ".brigade"
     (d / "ledger").mkdir(parents=True)
     return d
 
@@ -321,52 +321,52 @@ class TestSystemicLoop:
 # ---------------------------------------------------------------------------
 
 class TestSentinel:
-    def test_scan_emits_advisory(self, relay_dir):
+    def test_scan_emits_advisory(self, brigade_dir):
         leaky = _msg(
             "behaviour",
             "analyst",
             "examiner",
             {"actor": "u", "outcome": "use the validate_email function in validator.py", "boundaries": ""},
         )
-        write_message(leaky, relay_dir)
+        write_message(leaky, brigade_dir)
 
-        sentinel = Sentinel(_make_config(), None, relay_dir)
+        sentinel = Sentinel(_make_config(), None, brigade_dir)
         emitted = sentinel.scan_once()
 
         assert len(emitted) == 1
         assert emitted[0].type == "advisory"
         assert emitted[0].from_role == "sentinel"
 
-        ledger = list_ledger(relay_dir)
+        ledger = list_ledger(brigade_dir)
         assert any(m.type == "advisory" for m in ledger)
 
-    def test_clean_ledger_produces_no_advisory(self, relay_dir):
+    def test_clean_ledger_produces_no_advisory(self, brigade_dir):
         clean = _msg(
             "behaviour",
             "analyst",
             "examiner",
             {"actor": "a user", "outcome": "an email is accepted or rejected", "boundaries": "web"},
         )
-        write_message(clean, relay_dir)
+        write_message(clean, brigade_dir)
 
-        sentinel = Sentinel(_make_config(), None, relay_dir)
+        sentinel = Sentinel(_make_config(), None, brigade_dir)
         assert sentinel.scan_once() == []
 
-    def test_scan_is_idempotent_via_cursor(self, relay_dir):
+    def test_scan_is_idempotent_via_cursor(self, brigade_dir):
         leaky = _msg(
             "behaviour",
             "analyst",
             "examiner",
             {"actor": "u", "outcome": "use validator.py", "boundaries": ""},
         )
-        write_message(leaky, relay_dir)
-        sentinel = Sentinel(_make_config(), None, relay_dir)
+        write_message(leaky, brigade_dir)
+        sentinel = Sentinel(_make_config(), None, brigade_dir)
 
         assert len(sentinel.scan_once()) == 1
         # second scan sees nothing new → no duplicate advisory
         assert sentinel.scan_once() == []
 
-    def test_summary_counts_by_category(self, relay_dir):
+    def test_summary_counts_by_category(self, brigade_dir):
         concerns = [
             {"behaviour_id": _id(), "message_id": _id(), "category": "leakage", "description": "x"},
             {"behaviour_id": _id(), "message_id": _id(), "category": "leakage", "description": "y"},
@@ -380,9 +380,9 @@ class TestSentinel:
             behaviour_id=_id(),
             payload={"concerns": concerns, "severity": "advisory"},
         )
-        write_message(advisory, relay_dir)
+        write_message(advisory, brigade_dir)
 
-        summary = sentinel_summary(relay_dir)
+        summary = sentinel_summary(brigade_dir)
         assert summary == {("advisory", "leakage"): 2, ("advisory", "confidence_mismatch"): 1}
 
 
@@ -441,7 +441,7 @@ class FakeRouter:
 
 
 class TestModelBackedLeakage:
-    def test_model_confirms_regex_candidate(self, relay_dir):
+    def test_model_confirms_regex_candidate(self, brigade_dir):
         leaky = _msg(
             "behaviour",
             "analyst",
@@ -449,14 +449,14 @@ class TestModelBackedLeakage:
             {"actor": "u", "outcome": "use validator.py", "boundaries": ""},
         )
         router = FakeRouter([json.dumps({"leak": True, "reason": "mentions a file"})])
-        sentinel = Sentinel(_make_config(), router, relay_dir)
-        write_message(leaky, relay_dir)
+        sentinel = Sentinel(_make_config(), router, brigade_dir)
+        write_message(leaky, brigade_dir)
 
         emitted = sentinel.scan_once()
         assert len(emitted) == 1
         assert emitted[0].payload["concerns"][0]["category"] == "leakage"
 
-    def test_model_refutes_false_positive(self, relay_dir):
+    def test_model_refutes_false_positive(self, brigade_dir):
         # "api" matches the regex pre-filter, but the model rules it's not a leak.
         candidate = _msg(
             "behaviour",
@@ -465,12 +465,12 @@ class TestModelBackedLeakage:
             {"actor": "u", "outcome": "the api is exposed to the user", "boundaries": ""},
         )
         router = FakeRouter([json.dumps({"leak": False, "reason": "not implementation detail"})])
-        sentinel = Sentinel(_make_config(), router, relay_dir)
-        write_message(candidate, relay_dir)
+        sentinel = Sentinel(_make_config(), router, brigade_dir)
+        write_message(candidate, brigade_dir)
 
         assert sentinel.scan_once() == []
 
-    def test_model_failure_falls_back_to_heuristic(self, relay_dir):
+    def test_model_failure_falls_back_to_heuristic(self, brigade_dir):
         leaky = _msg(
             "behaviour",
             "analyst",
@@ -479,13 +479,13 @@ class TestModelBackedLeakage:
         )
         # Always-invalid model output → ModelCallError → fall back to flagging.
         router = FakeRouter(["garbage"] * 10)
-        sentinel = Sentinel(_make_config(), router, relay_dir)
-        write_message(leaky, relay_dir)
+        sentinel = Sentinel(_make_config(), router, brigade_dir)
+        write_message(leaky, brigade_dir)
 
         emitted = sentinel.scan_once()
         assert len(emitted) == 1
 
-    def test_model_only_called_for_candidates(self, relay_dir):
+    def test_model_only_called_for_candidates(self, brigade_dir):
         clean = _msg(
             "behaviour",
             "analyst",
@@ -499,9 +499,9 @@ class TestModelBackedLeakage:
             {"actor": "u", "outcome": "use validator.py", "boundaries": ""},
         )
         router = FakeRouter([json.dumps({"leak": True, "reason": "file"})])
-        sentinel = Sentinel(_make_config(), router, relay_dir)
-        write_message(clean, relay_dir)
-        write_message(leaky, relay_dir)
+        sentinel = Sentinel(_make_config(), router, brigade_dir)
+        write_message(clean, brigade_dir)
+        write_message(leaky, brigade_dir)
 
         sentinel.scan_once()
         # only the regex candidate triggered a model call — not the clean message

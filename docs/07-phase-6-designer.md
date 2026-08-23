@@ -43,12 +43,12 @@ Selection: `[roles.designer].review_tool` in `config.toml`, one of `"auto" | "la
 
 ### 1. Worktree isolation, same pattern as the Builder
 
-On receiving `design-request`, create `.relay/work/<behaviour_id>-design/` as its own git worktree/branch, separate from any worktree the Builder later creates for the same behaviour once implementation begins. Never touch the main project tree or any Builder worktree directly.
+On receiving `design-request`, create `.brigade/work/<behaviour_id>-design/` as its own git worktree/branch, separate from any worktree the Builder later creates for the same behaviour once implementation begins. Never touch the main project tree or any Builder worktree directly.
 
 ### 2. Headless harness invocation
 
 - Read `model` (and `harness`, same field name and meaning as `[roles.builder]`) from a new `[roles.designer]` section in `config.toml`.
-- Spawn the configured harness headlessly inside the Designer's worktree, with a persona prompt built from `.relay/personas/designer.md` (or the built-in default) plus the `design-request` payload's `text`.
+- Spawn the configured harness headlessly inside the Designer's worktree, with a persona prompt built from `.brigade/personas/designer.md` (or the built-in default) plus the `design-request` payload's `text`.
 - The persona must instruct the harness session to:
   - Produce one or more real, runnable HTML/CSS documents — never a static image, never a text description of what something would look like.
   - Never implement real backend logic, data fetching, or business logic — a Designer artifact is a visual/interaction shell only.

@@ -1,7 +1,7 @@
 """Git worktree isolation per behaviour.
 
-Each behaviour gets its own worktree at `.relay/work/<behaviour_id>/` on a
-branch `relay/<behaviour_id>`.  The worktree is created once and reused across
+Each behaviour gets its own worktree at `.brigade/work/<behaviour_id>/` on a
+branch `brigade/<behaviour_id>`.  The worktree is created once and reused across
 multiple expectation/verdict rounds for the same behaviour.
 """
 
@@ -17,12 +17,12 @@ def ensure_worktree(project_root: Path, behaviour_id: str) -> Path:
     Idempotent: reuses an existing worktree/branch across rounds rather than
     recreating it.
     """
-    worktree_path = project_root / ".relay" / "work" / behaviour_id
+    worktree_path = project_root / ".brigade" / "work" / behaviour_id
 
     if (worktree_path / ".git").exists():
         return worktree_path
 
-    branch = f"relay/{behaviour_id}"
+    branch = f"brigade/{behaviour_id}"
     subprocess.run(
         ["git", "worktree", "add", "-b", branch, str(worktree_path)],
         cwd=project_root,
@@ -46,7 +46,7 @@ def current_branch(worktree_path: Path) -> str:
 
 def has_worktree(project_root: Path, behaviour_id: str) -> bool:
     """True if a worktree already exists for *behaviour_id*."""
-    return (project_root / ".relay" / "work" / behaviour_id / ".git").exists()
+    return (project_root / ".brigade" / "work" / behaviour_id / ".git").exists()
 
 
 def git_exclude(worktree_path: Path, pattern: str) -> None:

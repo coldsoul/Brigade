@@ -1,4 +1,4 @@
-"""Relay CLI — entry point for all relay commands."""
+"""Brigade CLI — entry point for all brigade commands."""
 
 import json
 import os
@@ -14,7 +14,7 @@ import click
 # ---------------------------------------------------------------------------
 
 CONFIG_TOML_TEMPLATE = """\
-# Relay configuration
+# Brigade configuration
 # Model strings use provider/model format (e.g. "anthropic/claude-sonnet-5").
 # API keys are never stored here — they come from the environment.
 
@@ -50,8 +50,8 @@ scan_every = 10         # scan after this many new ledger messages
 MCP_JSON_TEMPLATE = """\
 {
   "mcpServers": {
-    "relay": {
-      "command": "relay",
+    "brigade": {
+      "command": "brigade",
       "args": ["mcp"]
     }
   }
@@ -62,9 +62,9 @@ OPENCODE_JSON_TEMPLATE = """\
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "relay": {
+    "brigade": {
       "type": "local",
-      "command": ["relay", "mcp"],
+      "command": ["brigade", "mcp"],
       "enabled": true
     }
   }
@@ -72,7 +72,7 @@ OPENCODE_JSON_TEMPLATE = """\
 """
 
 AGENTS_MD_TEMPLATE = """\
-# Relay Interpreter
+# Brigade Interpreter
 
 You are the Interpreter in the Relay Method — the human-facing agent, talking
 live with the Owner. You restate the Owner's problems as *needs*, never as
@@ -103,7 +103,7 @@ the conversation stays replayable even without a pipeline run.
 
 ## Hard boundaries — you do not write code
 
-You have five relay tools: `dispatch_behaviour`, `check_status`,
+You have five brigade tools: `dispatch_behaviour`, `check_status`,
 `dispatch_design_request`, `check_design_status`, and `log_conversation`.
 
 You may READ the project to answer questions — list files, read files, search,
@@ -111,10 +111,10 @@ and run read-only commands. You must NEVER write or edit a file yourself, not
 even a one-line fix. Every codebase change goes through `dispatch_behaviour`;
 the Builder writes all code — never you.
 
-Do not inspect `.mcp.json`, `opencode.json`, `.relay/`, or the relay source code
+Do not inspect `.mcp.json`, `opencode.json`, `.brigade/`, or the brigade source code
 — those are opaque plumbing, out of your lane.
 
-If a relay tool errors, report it to the Owner. Do not attempt to debug relay.
+If a brigade tool errors, report it to the Owner. Do not attempt to debug brigade.
 
 ## What you may and may not do
 
@@ -180,11 +180,11 @@ library names, data structures, or code structure.
 """
 
 GITIGNORE_ENTRIES = """\
-# Relay — transient state (managed by `relay init`)
-.relay/mailboxes/
-.relay/state.json
-.relay/work/
-.relay/evidence/
+# Brigade — transient state (managed by `brigade init`)
+.brigade/mailboxes/
+.brigade/state.json
+.brigade/work/
+.brigade/evidence/
 """
 
 
@@ -192,30 +192,30 @@ GITIGNORE_ENTRIES = """\
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _find_relay_dir() -> Path | None:
-    """Walk up from cwd looking for a `.relay/` directory.
+def _find_brigade_dir() -> Path | None:
+    """Walk up from cwd looking for a `.brigade/` directory.
 
-    Returns the path to the `.relay/` directory if found, or None.
+    Returns the path to the `.brigade/` directory if found, or None.
     """
     cwd = Path.cwd()
     for parent in [cwd, *cwd.parents]:
-        relay_dir = parent / ".relay"
-        if relay_dir.is_dir():
-            return relay_dir
+        brigade_dir = parent / ".brigade"
+        if brigade_dir.is_dir():
+            return brigade_dir
     return None
 
 
-def _require_relay_project():
-    """Exit with a clear message if not inside a relay-initialized directory."""
-    relay_dir = _find_relay_dir()
-    if relay_dir is None:
+def _require_brigade_project():
+    """Exit with a clear message if not inside a brigade-initialized directory."""
+    brigade_dir = _find_brigade_dir()
+    if brigade_dir is None:
         click.echo(
-            "error: not a relay project — no `.relay/` directory found here "
-            "or in any parent directory. Run `relay init` first.",
+            "error: not a brigade project — no `.brigade/` directory found here "
+            "or in any parent directory. Run `brigade init` first.",
             err=True,
         )
         sys.exit(1)
-    return relay_dir
+    return brigade_dir
 
 
 def _init_git_repo(target_dir: Path) -> bool:
@@ -244,7 +244,7 @@ def _init_git_repo(target_dir: Path) -> bool:
 
 
 def _append_gitignore(target_dir: Path) -> bool:
-    """Append relay-specific entries to `.gitignore` in *target_dir*.
+    """Append brigade-specific entries to `.gitignore` in *target_dir*.
 
     Skips entries that already exist in the file.  Returns True if any new
     entries were appended, False otherwise.
@@ -278,52 +278,52 @@ def _append_gitignore(target_dir: Path) -> bool:
 @click.group()
 @click.version_option()
 def main():
-    """Relay — multi-agent software-development workflow."""
+    """Brigade — multi-agent software-development workflow."""
 
 
 # ---------------------------------------------------------------------------
-# relay init
+# brigade init
 # ---------------------------------------------------------------------------
 
 @main.command()
 @click.argument("directory", required=False, default=".")
-@click.option("--force", is_flag=True, help="Overwrite an existing .relay/ directory.")
+@click.option("--force", is_flag=True, help="Overwrite an existing .brigade/ directory.")
 def init(directory: str, force: bool):
-    """Scaffold a new Relay project in DIRECTORY (defaults to current directory)."""
+    """Scaffold a new Brigade project in DIRECTORY (defaults to current directory)."""
     target = Path(directory).resolve()
-    relay_dir = target / ".relay"
+    brigade_dir = target / ".brigade"
 
     # --- guard: refuse to overwrite unless --force -------------------------
-    if relay_dir.exists():
+    if brigade_dir.exists():
         if not force:
             click.echo(
-                f"error: {relay_dir} already exists. Use --force to overwrite.",
+                f"error: {brigade_dir} already exists. Use --force to overwrite.",
                 err=True,
             )
             sys.exit(1)
-        _rmtree_safe(relay_dir)
-        click.echo(f"Removed existing {relay_dir}")
+        _rmtree_safe(brigade_dir)
+        click.echo(f"Removed existing {brigade_dir}")
 
     # --- create directory layout -------------------------------------------
     target.mkdir(parents=True, exist_ok=True)
 
     directories = [
-        relay_dir,
-        relay_dir / "mailboxes" / "analyst" / "inbox",
-        relay_dir / "mailboxes" / "examiner" / "inbox",
-        relay_dir / "mailboxes" / "builder" / "inbox",
-        relay_dir / "mailboxes" / "interpreter" / "inbox",
-        relay_dir / "mailboxes" / "designer" / "inbox",
-        relay_dir / "ledger",
-        relay_dir / "personas",
-        relay_dir / "work",
+        brigade_dir,
+        brigade_dir / "mailboxes" / "analyst" / "inbox",
+        brigade_dir / "mailboxes" / "examiner" / "inbox",
+        brigade_dir / "mailboxes" / "builder" / "inbox",
+        brigade_dir / "mailboxes" / "interpreter" / "inbox",
+        brigade_dir / "mailboxes" / "designer" / "inbox",
+        brigade_dir / "ledger",
+        brigade_dir / "personas",
+        brigade_dir / "work",
     ]
     for d in directories:
         d.mkdir(parents=True, exist_ok=True)
 
     # --- write files -------------------------------------------------------
-    (relay_dir / "config.toml").write_text(CONFIG_TOML_TEMPLATE)
-    (relay_dir / "state.json").write_text("{}\n")
+    (brigade_dir / "config.toml").write_text(CONFIG_TOML_TEMPLATE)
+    (brigade_dir / "state.json").write_text("{}\n")
     (target / ".mcp.json").write_text(MCP_JSON_TEMPLATE)
     (target / "opencode.json").write_text(OPENCODE_JSON_TEMPLATE)
     (target / "AGENTS.md").write_text(AGENTS_MD_TEMPLATE)
@@ -334,7 +334,7 @@ def init(directory: str, force: bool):
     # --- git init (user requirement) ---------------------------------------
     new_repo = _init_git_repo(target)
 
-    click.echo(f"Initialized Relay project in {target}")
+    click.echo(f"Initialized Brigade project in {target}")
     if new_repo:
         click.echo("  (also initialized a new git repository)")
 
@@ -347,37 +347,37 @@ def _rmtree_safe(path: Path):
 
 
 # ---------------------------------------------------------------------------
-# relay up
+# brigade up
 # ---------------------------------------------------------------------------
 
 @main.command()
 def up():
-    """Start the Relay role workers as foreground tasks."""
+    """Start the Brigade role workers as foreground tasks."""
     import threading
     import time
 
-    from relay.config import load_config
-    from relay.llm import LiteLLMRouter
-    from relay.sentinel import Sentinel
-    from relay.workers import (
+    from brigade.config import load_config
+    from brigade.llm import LiteLLMRouter
+    from brigade.sentinel import Sentinel
+    from brigade.workers import (
         AnalystWorker,
         BuilderWorker,
         DesignerWorker,
         ExaminerWorker,
     )
 
-    relay_dir = _require_relay_project()
-    config = load_config(relay_dir)
+    brigade_dir = _require_brigade_project()
+    config = load_config(brigade_dir)
     router = LiteLLMRouter()
 
     workers = [
-        AnalystWorker(config, router, relay_dir),
-        ExaminerWorker(config, router, relay_dir),
-        BuilderWorker(config, router, relay_dir),
-        DesignerWorker(config, router, relay_dir),
+        AnalystWorker(config, router, brigade_dir),
+        ExaminerWorker(config, router, brigade_dir),
+        BuilderWorker(config, router, brigade_dir),
+        DesignerWorker(config, router, brigade_dir),
     ]
 
-    sentinel = Sentinel(config, router, relay_dir)
+    sentinel = Sentinel(config, router, brigade_dir)
 
     threads = [
         threading.Thread(target=w.run, daemon=True, name=w.role)
@@ -388,7 +388,7 @@ def up():
         t.start()
 
     click.echo(
-        f"Relay workers started: {', '.join(w.role for w in workers)}, sentinel"
+        f"Brigade workers started: {', '.join(w.role for w in workers)}, sentinel"
     )
     click.echo("Press Ctrl+C to stop.")
     try:
@@ -399,33 +399,33 @@ def up():
 
 
 # ---------------------------------------------------------------------------
-# relay status
+# brigade status
 # ---------------------------------------------------------------------------
 
 @main.command()
 def status():
-    """Show current relay project status."""
-    from relay.storage import list_inbox
+    """Show current brigade project status."""
+    from brigade.storage import list_inbox
 
-    relay_dir = _find_relay_dir()
-    if relay_dir is None:
-        click.echo("Not a relay project — no `.relay/` directory found.")
-        click.echo("Run `relay init` to create one.")
+    brigade_dir = _find_brigade_dir()
+    if brigade_dir is None:
+        click.echo("Not a brigade project — no `.brigade/` directory found.")
+        click.echo("Run `brigade init` to create one.")
         return
 
-    project_dir = relay_dir.parent
-    click.echo(f"Relay project: {project_dir}")
+    project_dir = brigade_dir.parent
+    click.echo(f"Brigade project: {project_dir}")
 
     roles = ["analyst", "examiner", "builder", "interpreter", "designer"]
-    depths = {role: len(list_inbox(role, relay_dir)) for role in roles}
+    depths = {role: len(list_inbox(role, brigade_dir)) for role in roles}
     total = sum(depths.values())
     click.echo(f"Pending messages: {total}")
     for role in roles:
         click.echo(f"  {role}: {depths[role]}")
 
-    from relay.sentinel import sentinel_summary
+    from brigade.sentinel import sentinel_summary
 
-    flags = sentinel_summary(relay_dir)
+    flags = sentinel_summary(brigade_dir)
     if flags:
         click.echo("Sentinel flags:")
         for (severity, category), count in sorted(flags.items()):
@@ -435,24 +435,24 @@ def status():
 
 
 # ---------------------------------------------------------------------------
-# relay down
+# brigade down
 # ---------------------------------------------------------------------------
 
 @main.command()
 def down():
-    """Stop the Relay workers (stub — real logic in later phases)."""
-    _require_relay_project()
-    click.echo("No relay workers running (stub).")
+    """Stop the Brigade workers (stub — real logic in later phases)."""
+    _require_brigade_project()
+    click.echo("No brigade workers running (stub).")
 
 
 # ---------------------------------------------------------------------------
-# relay mcp (hidden — spawned by the harness via .mcp.json)
+# brigade mcp (hidden — spawned by the harness via .mcp.json)
 # ---------------------------------------------------------------------------
 
 @main.command(hidden=True)
 def mcp():
     """Run the Interpreter MCP server over stdio."""
-    from relay.mcp_server import run
+    from brigade.mcp_server import run
 
     run()
 

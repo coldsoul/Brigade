@@ -12,13 +12,13 @@ from pathlib import Path
 import pytest
 from ulid import ULID
 
-from relay.messages import (
+from brigade.messages import (
     Message,
     TOPOLOGY,
     ValidationError,
     validate,
 )
-from relay.storage import consume, deliver, list_inbox, list_ledger, read_message, write_message
+from brigade.storage import consume, deliver, list_inbox, list_ledger, read_message, write_message
 
 
 # ---------------------------------------------------------------------------
@@ -226,23 +226,23 @@ class TestLedger:
     """
 
     @pytest.fixture
-    def relay_dir(self, tmp_path: Path) -> Path:
-        d = tmp_path / ".relay"
+    def brigade_dir(self, tmp_path: Path) -> Path:
+        d = tmp_path / ".brigade"
         d.mkdir()
         (d / "ledger").mkdir()
         return d
 
-    def test_write_and_read_round_trip(self, relay_dir):
+    def test_write_and_read_round_trip(self, brigade_dir):
         msg = _make_message(
             "behaviour-to-implement",
             "interpreter",
             "analyst",
             payload={"text": "need a login"},
         )
-        path = write_message(msg, relay_dir)
+        path = write_message(msg, brigade_dir)
         assert path.exists()
 
-        restored = read_message(msg.id, relay_dir)
+        restored = read_message(msg.id, brigade_dir)
         assert restored.id == msg.id
         assert restored.type == msg.type
         assert restored.from_role == msg.from_role
@@ -250,9 +250,9 @@ class TestLedger:
         assert restored.behaviour_id == msg.behaviour_id
         assert restored.payload == msg.payload
 
-    def test_atomic_write_no_partial_files(self, relay_dir):
+    def test_atomic_write_no_partial_files(self, brigade_dir):
         """Simulate a crash during write — no corrupt ledger files remain."""
-        ledger_dir = relay_dir / "ledger"
+        ledger_dir = brigade_dir / "ledger"
 
         # Monkey-patch rename to simulate crash
         original_rename = os.rename
@@ -270,7 +270,7 @@ class TestLedger:
                 payload={"text": "crash test"},
             )
             with pytest.raises(OSError):
-                write_message(msg, relay_dir)
+                write_message(msg, brigade_dir)
         finally:
             os.rename = original_rename
 
@@ -282,21 +282,21 @@ class TestLedger:
         for tmp in ledger_dir.glob(".*.tmp"):
             tmp.unlink()
 
-    def test_list_ledger_all(self, relay_dir):
+    def test_list_ledger_all(self, brigade_dir):
         msg1 = _make_message("behaviour-to-implement", "interpreter", "analyst",
                              payload={"text": "first"})
         msg2 = _make_message("behaviour", "analyst", "examiner",
                              payload={"actor": "u", "outcome": "o", "boundaries": "b"})
-        write_message(msg1, relay_dir)
-        write_message(msg2, relay_dir)
+        write_message(msg1, brigade_dir)
+        write_message(msg2, brigade_dir)
 
-        all_msgs = list_ledger(relay_dir)
+        all_msgs = list_ledger(brigade_dir)
         assert len(all_msgs) == 2
         # ULIDs should sort chronologically
         assert all_msgs[0].id == msg1.id
         assert all_msgs[1].id == msg2.id
 
-    def test_list_ledger_filter_by_behaviour_id(self, relay_dir):
+    def test_list_ledger_filter_by_behaviour_id(self, brigade_dir):
         bid = _make_id()
         msg_a = _make_message("behaviour-to-implement", "interpreter", "analyst",
                               behaviour_id=bid, payload={"text": "a"})
@@ -305,20 +305,20 @@ class TestLedger:
         msg_other = _make_message("behaviour-to-implement", "interpreter", "analyst",
                                   payload={"text": "other"})
 
-        write_message(msg_a, relay_dir)
-        write_message(msg_b, relay_dir)
-        write_message(msg_other, relay_dir)
+        write_message(msg_a, brigade_dir)
+        write_message(msg_b, brigade_dir)
+        write_message(msg_other, brigade_dir)
 
-        filtered = list_ledger(relay_dir, behaviour_id=bid)
+        filtered = list_ledger(brigade_dir, behaviour_id=bid)
         assert len(filtered) == 2
         assert {m.id for m in filtered} == {msg_a.id, msg_b.id}
 
-    def test_list_ledger_empty_dir(self, relay_dir):
-        assert list_ledger(relay_dir) == []
+    def test_list_ledger_empty_dir(self, brigade_dir):
+        assert list_ledger(brigade_dir) == []
 
-    def test_read_nonexistent_message(self, relay_dir):
+    def test_read_nonexistent_message(self, brigade_dir):
         with pytest.raises(FileNotFoundError):
-            read_message("01NONEXISTENT", relay_dir)
+            read_message("01NONEXISTENT", brigade_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -332,15 +332,15 @@ class TestMailbox:
     """
 
     @pytest.fixture
-    def relay_dir(self, tmp_path: Path) -> Path:
-        d = tmp_path / ".relay"
+    def brigade_dir(self, tmp_path: Path) -> Path:
+        d = tmp_path / ".brigade"
         d.mkdir()
         (d / "ledger").mkdir()
         for role in ("analyst", "examiner", "builder", "interpreter"):
             (d / "mailboxes" / role / "inbox").mkdir(parents=True)
         return d
 
-    def test_deliver_list_consume_round_trip(self, relay_dir):
+    def test_deliver_list_consume_round_trip(self, brigade_dir):
         msg = _make_message(
             "behaviour-to-implement",
             "interpreter",
@@ -349,45 +349,45 @@ class TestMailbox:
         )
 
         # Deliver puts it in analyst's inbox
-        deliver(msg, relay_dir)
+        deliver(msg, brigade_dir)
 
         # List shows it
-        inbox = list_inbox("analyst", relay_dir)
+        inbox = list_inbox("analyst", brigade_dir)
         assert inbox == [msg.id]
 
         # Ledger file exists
-        assert (relay_dir / "ledger" / f"{msg.id}.json").exists()
+        assert (brigade_dir / "ledger" / f"{msg.id}.json").exists()
 
         # Consume returns the message
-        consumed = consume("analyst", msg.id, relay_dir)
+        consumed = consume("analyst", msg.id, brigade_dir)
         assert consumed.id == msg.id
         assert consumed.payload == msg.payload
 
         # Inbox pointer is gone
-        assert list_inbox("analyst", relay_dir) == []
+        assert list_inbox("analyst", brigade_dir) == []
 
         # Ledger entry still exists
-        assert (relay_dir / "ledger" / f"{msg.id}.json").exists()
+        assert (brigade_dir / "ledger" / f"{msg.id}.json").exists()
 
-    def test_list_inbox_empty(self, relay_dir):
-        assert list_inbox("analyst", relay_dir) == []
+    def test_list_inbox_empty(self, brigade_dir):
+        assert list_inbox("analyst", brigade_dir) == []
 
-    def test_list_inbox_nonexistent_role(self, relay_dir):
-        assert list_inbox("nonexistent", relay_dir) == []
+    def test_list_inbox_nonexistent_role(self, brigade_dir):
+        assert list_inbox("nonexistent", brigade_dir) == []
 
-    def test_consume_missing_pointer(self, relay_dir):
+    def test_consume_missing_pointer(self, brigade_dir):
         with pytest.raises(FileNotFoundError):
-            consume("analyst", "01NONEXISTENT", relay_dir)
+            consume("analyst", "01NONEXISTENT", brigade_dir)
 
-    def test_multiple_messages_in_inbox_oldest_first(self, relay_dir):
+    def test_multiple_messages_in_inbox_oldest_first(self, brigade_dir):
         msg1 = _make_message("behaviour-to-implement", "interpreter", "analyst",
                              payload={"text": "first"})
         msg2 = _make_message("behaviour-to-implement", "interpreter", "analyst",
                              payload={"text": "second"})
-        deliver(msg1, relay_dir)
-        deliver(msg2, relay_dir)
+        deliver(msg1, brigade_dir)
+        deliver(msg2, brigade_dir)
 
-        inbox = list_inbox("analyst", relay_dir)
+        inbox = list_inbox("analyst", brigade_dir)
         assert len(inbox) == 2
         # ULIDs sort chronologically, so msg1 (older) comes first
         assert inbox == [msg1.id, msg2.id]
@@ -404,15 +404,15 @@ class TestIntegration:
     """
 
     @pytest.fixture
-    def relay_dir(self, tmp_path: Path) -> Path:
-        d = tmp_path / ".relay"
+    def brigade_dir(self, tmp_path: Path) -> Path:
+        d = tmp_path / ".brigade"
         d.mkdir()
         (d / "ledger").mkdir()
         for role in ("analyst", "examiner", "builder", "interpreter"):
             (d / "mailboxes" / role / "inbox").mkdir(parents=True)
         return d
 
-    def test_linked_behaviour_status_messages(self, relay_dir):
+    def test_linked_behaviour_status_messages(self, brigade_dir):
         behaviour_id = _make_id()
 
         # Examiner → Analyst behaviour-status
@@ -427,7 +427,7 @@ class TestIntegration:
                 "summary": "expectations all met",
             },
         )
-        deliver(exam_status, relay_dir)
+        deliver(exam_status, brigade_dir)
 
         # Analyst → Interpreter behaviour-status, linked via reply_to
         analyst_status = _make_message(
@@ -442,20 +442,20 @@ class TestIntegration:
                 "summary": "login behaviour is done",
             },
         )
-        deliver(analyst_status, relay_dir)
+        deliver(analyst_status, brigade_dir)
 
         # Both in ledger
-        ledger = list_ledger(relay_dir, behaviour_id=behaviour_id)
+        ledger = list_ledger(brigade_dir, behaviour_id=behaviour_id)
         assert len(ledger) == 2
 
         # Second message links back to the first
-        restored = read_message(analyst_status.id, relay_dir)
+        restored = read_message(analyst_status.id, brigade_dir)
         assert restored.reply_to == exam_status.id
 
         # Both are distinct files
         assert exam_status.id != analyst_status.id
 
-    def test_valid_message_does_not_write_on_validation_failure(self, relay_dir):
+    def test_valid_message_does_not_write_on_validation_failure(self, brigade_dir):
         """A message that fails validation must not touch disk at all."""
         msg = _make_message(
             "evidence",  # wrong edge: interpreter->analyst doesn't allow evidence
@@ -464,7 +464,7 @@ class TestIntegration:
             payload={"evidence": [], "test_files_touched": []},
         )
         with pytest.raises(ValidationError):
-            write_message(msg, relay_dir)
+            write_message(msg, brigade_dir)
 
         # Nothing written
-        assert list_ledger(relay_dir) == []
+        assert list_ledger(brigade_dir) == []

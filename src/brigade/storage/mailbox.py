@@ -9,27 +9,27 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from relay.messages.models import Message
-from relay.storage.ledger import read_message, write_message
+from brigade.messages.models import Message
+from brigade.storage.ledger import read_message, write_message
 
 
-def deliver(message: Message, relay_dir: Path) -> None:
+def deliver(message: Message, brigade_dir: Path) -> None:
     """Write *message* to the ledger and drop an inbox pointer for the recipient.
 
     Owner ↔ Interpreter messages should call `write_message` directly instead.
     """
-    write_message(message, relay_dir)
+    write_message(message, brigade_dir)
 
-    inbox_dir = relay_dir / "mailboxes" / message.to_role / "inbox"
+    inbox_dir = brigade_dir / "mailboxes" / message.to_role / "inbox"
     inbox_dir.mkdir(parents=True, exist_ok=True)
 
     pointer = inbox_dir / message.id
     pointer.touch()
 
 
-def list_inbox(role: str, relay_dir: Path) -> list[str]:
+def list_inbox(role: str, brigade_dir: Path) -> list[str]:
     """Return pending message IDs for *role*, oldest first (ULID sort)."""
-    inbox_dir = relay_dir / "mailboxes" / role / "inbox"
+    inbox_dir = brigade_dir / "mailboxes" / role / "inbox"
     if not inbox_dir.is_dir():
         return []
 
@@ -40,19 +40,19 @@ def list_inbox(role: str, relay_dir: Path) -> list[str]:
     )
 
 
-def consume(role: str, message_id: str, relay_dir: Path) -> Message:
+def consume(role: str, message_id: str, brigade_dir: Path) -> Message:
     """Claim a message from *role*'s inbox.
 
     Reads the full message from the ledger, removes the inbox pointer,
     and returns the message.  Raises `FileNotFoundError` if the pointer
     does not exist.
     """
-    pointer = relay_dir / "mailboxes" / role / "inbox" / message_id
+    pointer = brigade_dir / "mailboxes" / role / "inbox" / message_id
     if not pointer.is_file():
         raise FileNotFoundError(
             f"No message '{message_id}' in {role}'s inbox"
         )
 
-    message = read_message(message_id, relay_dir)
+    message = read_message(message_id, brigade_dir)
     pointer.unlink()
     return message

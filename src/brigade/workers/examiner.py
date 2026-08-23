@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from relay.messages import Message, UnmetExpectation
-from relay.workers.base import RoleWorker, build_reply
+from brigade.messages import Message, UnmetExpectation
+from brigade.workers.base import RoleWorker, build_reply
 
 
 class ExpectationDraft(BaseModel):
@@ -113,10 +113,10 @@ class ExaminerWorker(RoleWorker):
         if not msg.reply_to:
             return 0
 
-        from relay.storage import read_message
+        from brigade.storage import read_message
 
         try:
-            referenced = read_message(msg.reply_to, self.relay_dir)
+            referenced = read_message(msg.reply_to, self.brigade_dir)
         except FileNotFoundError:
             return 0
 

@@ -1,6 +1,6 @@
 """Message models, topology, and validator."""
 
-from relay.messages.models import (
+from brigade.messages.models import (
     AdvisoryPayload,
     BehaviourPayload,
     BehaviourStatusPayload,
@@ -19,14 +19,14 @@ from relay.messages.models import (
     UnmetExpectation,
     VerdictPayload,
 )
-from relay.messages.topology import (
+from brigade.messages.topology import (
     MAILBOX_ROUTED_EDGES,
     OWNER_INTERPRETER_TYPES,
     SENTINEL_TYPES,
     TOPOLOGY,
     is_owner_interpreter_edge,
 )
-from relay.messages.validator import ValidationError, validate
+from brigade.messages.validator import ValidationError, validate
 
 __all__ = [
     # Models

@@ -11,7 +11,7 @@ import json
 
 from pydantic import BaseModel, ValidationError as PydanticValidationError
 
-from relay.capabilities import resolve_capabilities
+from brigade.capabilities import resolve_capabilities
 
 MAX_SCHEMA_RETRIES = 3
 

@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 from ulid import ULID
 
-from relay.capabilities import resolve_capabilities
-from relay.config import Config, ConfigError, load_config
-from relay.llm import ModelRouter
-from relay.messages import Message
-from relay.personas import load_persona
-from relay.storage import (
+from brigade.capabilities import resolve_capabilities
+from brigade.config import Config, ConfigError, load_config
+from brigade.llm import ModelRouter
+from brigade.messages import Message
+from brigade.personas import load_persona
+from brigade.storage import (
     consume,
     deliver,
     list_inbox,
@@ -21,7 +21,7 @@ from relay.storage import (
     read_message,
     write_message,
 )
-from relay.workers import AnalystWorker, ExaminerWorker, WorkerError
+from brigade.workers import AnalystWorker, ExaminerWorker, WorkerError
 
 
 # ---------------------------------------------------------------------------
@@ -51,8 +51,8 @@ def _make_message(
     )
 
 
-def _make_relay_dir(tmp_path: Path) -> Path:
-    d = tmp_path / ".relay"
+def _make_brigade_dir(tmp_path: Path) -> Path:
+    d = tmp_path / ".brigade"
     (d / "ledger").mkdir(parents=True)
     for role in ("analyst", "examiner", "builder", "interpreter"):
         (d / "mailboxes" / role / "inbox").mkdir(parents=True)
@@ -93,8 +93,8 @@ class FakeRouter(ModelRouter):
 
 class TestConfig:
     def test_parses_full_shape(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
-        (relay_dir / "config.toml").write_text(
+        brigade_dir = _make_brigade_dir(tmp_path)
+        (brigade_dir / "config.toml").write_text(
             """\
 [project]
 max_loops = 5
@@ -112,15 +112,15 @@ model = "openrouter/deepseek/deepseek-coder"
 [capabilities.model_overrides]
 """
         )
-        cfg = load_config(relay_dir)
+        cfg = load_config(brigade_dir)
         assert cfg.project.max_loops == 5
         assert cfg.roles["analyst"].model == "anthropic/claude-sonnet-5"
         assert cfg.roles["builder"].harness == "opencode"
         assert cfg.capabilities.model_overrides == {}
 
     def test_missing_builder_harness_is_an_error(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
-        (relay_dir / "config.toml").write_text(
+        brigade_dir = _make_brigade_dir(tmp_path)
+        (brigade_dir / "config.toml").write_text(
             """\
 [project]
 max_loops = 3
@@ -130,13 +130,13 @@ model = "anthropic/claude-sonnet-5"
 """
         )
         with pytest.raises(ConfigError) as exc:
-            load_config(relay_dir)
+            load_config(brigade_dir)
         assert "harness" in str(exc.value)
 
     def test_missing_config_file_is_an_error(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
+        brigade_dir = _make_brigade_dir(tmp_path)
         with pytest.raises(ConfigError):
-            load_config(relay_dir)
+            load_config(brigade_dir)
 
     def test_default_max_loops(self):
         cfg = Config.model_validate({"roles": {"builder": {"harness": "claude"}}})
@@ -182,9 +182,9 @@ class TestPersonas:
             assert "Output contract" in persona
 
     def test_file_override(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
-        (relay_dir / "personas" / "analyst.md").write_text("CUSTOM ANALYST")
-        assert load_persona("analyst", relay_dir) == "CUSTOM ANALYST"
+        brigade_dir = _make_brigade_dir(tmp_path)
+        (brigade_dir / "personas" / "analyst.md").write_text("CUSTOM ANALYST")
+        assert load_persona("analyst", brigade_dir) == "CUSTOM ANALYST"
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +193,7 @@ class TestPersonas:
 
 class TestAnalyst:
     def test_behaviour_to_implement_produces_behaviour(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
+        brigade_dir = _make_brigade_dir(tmp_path)
         router = FakeRouter([
             json.dumps({
                 "actor": "a user",
@@ -201,7 +201,7 @@ class TestAnalyst:
                 "boundaries": "web only",
             })
         ])
-        worker = AnalystWorker(_make_config(), router, relay_dir)
+        worker = AnalystWorker(_make_config(), router, brigade_dir)
 
         incoming = _make_message(
             "behaviour-to-implement",
@@ -209,25 +209,25 @@ class TestAnalyst:
             "analyst",
             {"text": "users need to log in"},
         )
-        deliver(incoming, relay_dir)
+        deliver(incoming, brigade_dir)
 
         worker.run_once()
 
         # behaviour delivered to examiner's inbox
-        inbox = list_inbox("examiner", relay_dir)
+        inbox = list_inbox("examiner", brigade_dir)
         assert len(inbox) == 1
-        reply = consume("examiner", inbox[0], relay_dir)
+        reply = consume("examiner", inbox[0], brigade_dir)
         assert reply.type == "behaviour"
         assert reply.to_role == "examiner"
         assert reply.reply_to == incoming.id
         assert reply.payload["actor"] == "a user"
 
     def test_prompt_includes_forbidden_leakage_rule(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
+        brigade_dir = _make_brigade_dir(tmp_path)
         router = FakeRouter([
             json.dumps({"actor": "u", "outcome": "o", "boundaries": ""})
         ])
-        worker = AnalystWorker(_make_config(), router, relay_dir)
+        worker = AnalystWorker(_make_config(), router, brigade_dir)
 
         incoming = _make_message(
             "behaviour-to-implement", "interpreter", "analyst", {"text": "x"}
@@ -239,7 +239,7 @@ class TestAnalyst:
         assert "no implementation detail" in router.calls[0]
 
     def test_behaviour_status_is_re_authored(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
+        brigade_dir = _make_brigade_dir(tmp_path)
         router = FakeRouter([
             json.dumps({
                 "behaviour_id": "B1",
@@ -247,7 +247,7 @@ class TestAnalyst:
                 "summary": "the login behaviour is now complete",
             })
         ])
-        worker = AnalystWorker(_make_config(), router, relay_dir)
+        worker = AnalystWorker(_make_config(), router, brigade_dir)
 
         incoming = _make_message(
             "behaviour-status",
@@ -260,13 +260,13 @@ class TestAnalyst:
             },
             behaviour_id="B1",
         )
-        deliver(incoming, relay_dir)
+        deliver(incoming, brigade_dir)
 
         worker.run_once()
 
-        inbox = list_inbox("interpreter", relay_dir)
+        inbox = list_inbox("interpreter", brigade_dir)
         assert len(inbox) == 1
-        reply = consume("interpreter", inbox[0], relay_dir)
+        reply = consume("interpreter", inbox[0], brigade_dir)
         assert reply.type == "behaviour-status"
         assert reply.to_role == "interpreter"
         assert reply.reply_to == incoming.id
@@ -283,7 +283,7 @@ class TestAnalyst:
 
 class TestExaminer:
     def test_behaviour_produces_expectation_with_loop_bookkeeping(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
+        brigade_dir = _make_brigade_dir(tmp_path)
         router = FakeRouter([
             json.dumps({
                 "expectations": [
@@ -293,7 +293,7 @@ class TestExaminer:
                 "integration_expectation": "form submits end to end",
             })
         ])
-        worker = ExaminerWorker(_make_config(max_loops=3), router, relay_dir)
+        worker = ExaminerWorker(_make_config(max_loops=3), router, brigade_dir)
 
         incoming = _make_message(
             "behaviour",
@@ -301,19 +301,19 @@ class TestExaminer:
             "examiner",
             {"actor": "user", "outcome": "can log in", "boundaries": "web"},
         )
-        deliver(incoming, relay_dir)
+        deliver(incoming, brigade_dir)
 
         worker.run_once()
 
-        inbox = list_inbox("builder", relay_dir)
+        inbox = list_inbox("builder", brigade_dir)
         assert len(inbox) == 1
-        reply = consume("builder", inbox[0], relay_dir)
+        reply = consume("builder", inbox[0], brigade_dir)
         assert reply.type == "expectation"
         assert reply.payload["loop_count"] == 0
         assert reply.payload["max_loops"] == 3
         assert len(reply.payload["expectations"]) == 2
 
-    def _place_evidence(self, relay_dir, reply_to: Message | None = None):
+    def _place_evidence(self, brigade_dir, reply_to: Message | None = None):
         """Deliver an evidence message to the examiner's inbox."""
         evidence = _make_message(
             "evidence",
@@ -336,11 +336,11 @@ class TestExaminer:
             },
             reply_to=reply_to.id if reply_to else None,
         )
-        deliver(evidence, relay_dir)
+        deliver(evidence, brigade_dir)
         return evidence
 
     def test_evidence_all_satisfied_yields_solved(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
+        brigade_dir = _make_brigade_dir(tmp_path)
         router = FakeRouter([
             json.dumps({
                 "satisfied": ["E1"],
@@ -348,19 +348,19 @@ class TestExaminer:
                 "summary": "the login behaviour works",
             })
         ])
-        worker = ExaminerWorker(_make_config(), router, relay_dir)
+        worker = ExaminerWorker(_make_config(), router, brigade_dir)
 
-        self._place_evidence(relay_dir)
+        self._place_evidence(brigade_dir)
         worker.run_once()
 
-        inbox = list_inbox("analyst", relay_dir)
+        inbox = list_inbox("analyst", brigade_dir)
         assert len(inbox) == 1
-        reply = consume("analyst", inbox[0], relay_dir)
+        reply = consume("analyst", inbox[0], brigade_dir)
         assert reply.type == "behaviour-status"
         assert reply.payload["outcome"] == "solved"
 
     def test_evidence_unmet_below_cap_yields_verdict(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
+        brigade_dir = _make_brigade_dir(tmp_path)
 
         # expectation with loop_count=0
         expectation = _make_message(
@@ -374,7 +374,7 @@ class TestExaminer:
                 "max_loops": 3,
             },
         )
-        write_message(expectation, relay_dir)
+        write_message(expectation, brigade_dir)
 
         router = FakeRouter([
             json.dumps({
@@ -383,22 +383,22 @@ class TestExaminer:
                 "summary": "still failing",
             })
         ])
-        worker = ExaminerWorker(_make_config(), router, relay_dir)
+        worker = ExaminerWorker(_make_config(), router, brigade_dir)
 
-        self._place_evidence(relay_dir, reply_to=expectation)
+        self._place_evidence(brigade_dir, reply_to=expectation)
         worker.run_once()
 
-        inbox = list_inbox("builder", relay_dir)
+        inbox = list_inbox("builder", brigade_dir)
         # the evidence pointer is gone; only the verdict pointer remains
         verdicts = [m for m in inbox]
         assert len(verdicts) == 1
-        reply = consume("builder", inbox[0], relay_dir)
+        reply = consume("builder", inbox[0], brigade_dir)
         assert reply.type == "verdict"
         assert reply.payload["escalate"] is False
         assert reply.payload["loop_count"] == 1  # incremented
 
     def test_evidence_unmet_at_cap_yields_blocked(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
+        brigade_dir = _make_brigade_dir(tmp_path)
 
         # previous verdict with loop_count == max_loops
         verdict = _make_message(
@@ -412,7 +412,7 @@ class TestExaminer:
                 "escalate": False,
             },
         )
-        write_message(verdict, relay_dir)
+        write_message(verdict, brigade_dir)
 
         router = FakeRouter([
             json.dumps({
@@ -421,14 +421,14 @@ class TestExaminer:
                 "summary": "cap reached",
             })
         ])
-        worker = ExaminerWorker(_make_config(max_loops=3), router, relay_dir)
+        worker = ExaminerWorker(_make_config(max_loops=3), router, brigade_dir)
 
-        self._place_evidence(relay_dir, reply_to=verdict)
+        self._place_evidence(brigade_dir, reply_to=verdict)
         worker.run_once()
 
-        inbox = list_inbox("analyst", relay_dir)
+        inbox = list_inbox("analyst", brigade_dir)
         assert len(inbox) == 1
-        reply = consume("analyst", inbox[0], relay_dir)
+        reply = consume("analyst", inbox[0], brigade_dir)
         assert reply.type == "behaviour-status"
         assert reply.payload["outcome"] == "blocked"
 
@@ -439,12 +439,12 @@ class TestExaminer:
 
 class TestSchemaRetry:
     def test_broken_then_valid_response_retries_and_succeeds(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
+        brigade_dir = _make_brigade_dir(tmp_path)
         router = FakeRouter([
             "not json at all {{{",
             json.dumps({"actor": "u", "outcome": "o", "boundaries": ""}),
         ])
-        worker = AnalystWorker(_make_config(), router, relay_dir)
+        worker = AnalystWorker(_make_config(), router, brigade_dir)
 
         incoming = _make_message(
             "behaviour-to-implement", "interpreter", "analyst", {"text": "x"}
@@ -458,9 +458,9 @@ class TestSchemaRetry:
         assert "invalid" in router.calls[1].lower()
 
     def test_persistently_broken_response_fails_loudly(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
+        brigade_dir = _make_brigade_dir(tmp_path)
         router = FakeRouter(["garbage" for _ in range(10)])
-        worker = AnalystWorker(_make_config(), router, relay_dir)
+        worker = AnalystWorker(_make_config(), router, brigade_dir)
 
         incoming = _make_message(
             "behaviour-to-implement", "interpreter", "analyst", {"text": "x"}
@@ -469,15 +469,15 @@ class TestSchemaRetry:
             worker.process(incoming)
 
         # nothing was delivered
-        assert list_inbox("examiner", relay_dir) == []
+        assert list_inbox("examiner", brigade_dir) == []
 
     def test_schema_invalid_payload_retries(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
+        brigade_dir = _make_brigade_dir(tmp_path)
         router = FakeRouter([
             json.dumps({"actor": "u", "outcome": "o"}),  # missing boundaries
             json.dumps({"actor": "u", "outcome": "o", "boundaries": ""}),
         ])
-        worker = AnalystWorker(_make_config(), router, relay_dir)
+        worker = AnalystWorker(_make_config(), router, brigade_dir)
 
         incoming = _make_message(
             "behaviour-to-implement", "interpreter", "analyst", {"text": "x"}

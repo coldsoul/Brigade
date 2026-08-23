@@ -50,7 +50,7 @@ A constant (not read from any config file) encoding the table from the project o
 (analyst, interpreter)  → {behaviour-status}
 ```
 
-Plus a way to represent that Owner↔Interpreter message types are valid but not mailbox-routed (see mailbox section below — this edge never touches `.relay/mailboxes/`).
+Plus a way to represent that Owner↔Interpreter message types are valid but not mailbox-routed (see mailbox section below — this edge never touches `.brigade/mailboxes/`).
 
 ### 4. Validator
 
@@ -63,14 +63,14 @@ Return a structured error (not just a raised exception with a string) so a calli
 
 ### 5. Ledger writer/reader
 
-- `write_message(message) -> None`: validates, then writes `payload` + full envelope as one JSON file to `.relay/ledger/<id>.json`. Writing must be atomic (write to a temp file, then rename) — never leave a partially-written ledger file if the process dies mid-write.
+- `write_message(message) -> None`: validates, then writes `payload` + full envelope as one JSON file to `.brigade/ledger/<id>.json`. Writing must be atomic (write to a temp file, then rename) — never leave a partially-written ledger file if the process dies mid-write.
 - `read_message(id) -> Message`
-- `list_ledger(behaviour_id: str | None = None) -> list[Message]`: sorted by `id` (ULIDs sort chronologically), optionally filtered to one behaviour — this is what `relay status`/a future TUI will use.
-- The ledger is append-only in practice: nothing in this phase should ever modify or delete a file under `.relay/ledger/`.
+- `list_ledger(behaviour_id: str | None = None) -> list[Message]`: sorted by `id` (ULIDs sort chronologically), optionally filtered to one behaviour — this is what `brigade status`/a future TUI will use.
+- The ledger is append-only in practice: nothing in this phase should ever modify or delete a file under `.brigade/ledger/`.
 
 ### 6. Mailbox (inbox) mechanics
 
-- `deliver(message) -> None`: calls `write_message`, then creates a pointer in `.relay/mailboxes/<to_role>/inbox/<id>` (an empty marker file, or a tiny file containing just the ledger path — either is fine, but don't duplicate the message content into it).
+- `deliver(message) -> None`: calls `write_message`, then creates a pointer in `.brigade/mailboxes/<to_role>/inbox/<id>` (an empty marker file, or a tiny file containing just the ledger path — either is fine, but don't duplicate the message content into it).
 - `list_inbox(role) -> list[str]`: returns pending message ids for a role, oldest first.
 - `consume(role, id) -> Message`: reads the full message from the ledger, deletes the inbox pointer, returns the message. This is what a worker calls when it picks up a message to act on.
 - Owner↔Interpreter messages (see topology note above) are written to the ledger via `write_message` directly but **never** go through `deliver`/an inbox — there is no `interpreter` mailbox for messages *from* the Owner, since that edge is live chat, not file-polled. (The `interpreter` inbox that *does* exist is solely for incoming `behaviour-status` from the Analyst.)
@@ -88,7 +88,7 @@ Return a structured error (not just a raised exception with a string) so a calli
 - [ ] A message on a nonexistent edge (e.g. `builder` → `interpreter`) is rejected by the validator with a clear structured error, and nothing is written to disk.
 - [ ] A message with a legal edge but wrong `type` for that edge (e.g. `evidence` sent `interpreter` → `analyst`) is rejected the same way.
 - [ ] A message with a well-formed envelope but a payload that doesn't match its type's schema (e.g. an `expectation` missing `loop_count`) is rejected.
-- [ ] Killing the process mid-write (simulate by interrupting or mocking) never leaves a corrupt/partial file under `.relay/ledger/`.
+- [ ] Killing the process mid-write (simulate by interrupting or mocking) never leaves a corrupt/partial file under `.brigade/ledger/`.
 - [ ] `list_ledger(behaviour_id=X)` correctly filters to only messages carrying that `behaviour_id`.
 - [ ] `list_ledger()` with no filter returns all messages in chronological (ULID) order.
 - [ ] Two `behaviour-status` messages for the same behaviour (one `examiner`→`analyst`, one `analyst`→`interpreter`) can be written as two distinct ledger entries linked via `reply_to`, and both are retrievable.

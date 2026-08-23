@@ -10,21 +10,21 @@ from pathlib import Path
 import pytest
 from ulid import ULID
 
-from relay.config import Config
-from relay.harness import HarnessResult
-from relay.interpreter import (
+from brigade.config import Config
+from brigade.harness import HarnessResult
+from brigade.interpreter import (
     check_design_status_impl,
     dispatch_design_request_impl,
 )
-from relay.messages import Message, validate
-from relay.review import (
+from brigade.messages import Message, validate
+from brigade.review import (
     APPROVED,
     BasicAdapter,
     LavishAdapter,
     select_review_adapter,
 )
-from relay.storage import consume, deliver, list_inbox, read_message
-from relay.workers import DesignerWorker
+from brigade.storage import consume, deliver, list_inbox, read_message
+from brigade.workers import DesignerWorker
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +62,7 @@ def _make_config(max_loops: int = 3, review_tool: str = "basic") -> Config:
 
 
 @pytest.fixture
-def relay_dir(tmp_path: Path) -> Path:
+def brigade_dir(tmp_path: Path) -> Path:
     project_root = tmp_path / "project"
     project_root.mkdir()
     subprocess.run(["git", "init"], cwd=project_root, check=True, capture_output=True)
@@ -72,7 +72,7 @@ def relay_dir(tmp_path: Path) -> Path:
         ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "init"],
         cwd=project_root, check=True, capture_output=True,
     )
-    d = project_root / ".relay"
+    d = project_root / ".brigade"
     (d / "ledger").mkdir(parents=True)
     for role in ("analyst", "examiner", "builder", "interpreter", "designer"):
         (d / "mailboxes" / role / "inbox").mkdir(parents=True)
@@ -153,7 +153,7 @@ class TestReviewSelection:
 
 class TestLavishAdapter:
     def _fake_run(self, monkeypatch, poll_stdout):
-        import relay.review as review_mod
+        import brigade.review as review_mod
 
         calls: list[list[str]] = []
 
@@ -200,7 +200,7 @@ class TestLavishAdapter:
 
 class TestInterpreterTools:
     def test_dispatch_design_request(self, tmp_path):
-        d = tmp_path / ".relay"
+        d = tmp_path / ".brigade"
         (d / "ledger").mkdir(parents=True)
         (d / "mailboxes" / "designer" / "inbox").mkdir(parents=True)
         (d / "mailboxes" / "interpreter" / "inbox").mkdir(parents=True)
@@ -215,7 +215,7 @@ class TestInterpreterTools:
         assert msg.behaviour_id == result["behaviour_id"]
 
     def test_check_design_status_pending_then_done(self, tmp_path):
-        d = tmp_path / ".relay"
+        d = tmp_path / ".brigade"
         (d / "ledger").mkdir(parents=True)
         (d / "mailboxes" / "designer" / "inbox").mkdir(parents=True)
         (d / "mailboxes" / "interpreter" / "inbox").mkdir(parents=True)
@@ -243,11 +243,11 @@ class TestInterpreterTools:
 # ---------------------------------------------------------------------------
 
 class TestDesignerWorker:
-    def test_approved_first_try(self, relay_dir):
+    def test_approved_first_try(self, brigade_dir):
         harness = FakeHarness()
         adapter = FakeAdapter([APPROVED])
         worker = DesignerWorker(
-            _make_config(), None, relay_dir, harness_runner=harness, review_adapter=adapter
+            _make_config(), None, brigade_dir, harness_runner=harness, review_adapter=adapter
         )
 
         msg = _make_message(
@@ -261,11 +261,11 @@ class TestDesignerWorker:
         assert reply.payload["artifact_ref"].endswith("concept.html")
         assert "clean, minimal" in reply.payload["description"]
 
-    def test_worktree_and_html_generated(self, relay_dir):
+    def test_worktree_and_html_generated(self, brigade_dir):
         harness = FakeHarness()
         adapter = FakeAdapter([APPROVED])
         worker = DesignerWorker(
-            _make_config(), None, relay_dir, harness_runner=harness, review_adapter=adapter
+            _make_config(), None, brigade_dir, harness_runner=harness, review_adapter=adapter
         )
 
         msg = _make_message(
@@ -273,15 +273,15 @@ class TestDesignerWorker:
         )
         worker.process(msg)
 
-        worktree = relay_dir.parent / ".relay" / "work" / f"{msg.behaviour_id}-design"
+        worktree = brigade_dir.parent / ".brigade" / "work" / f"{msg.behaviour_id}-design"
         assert (worktree / "concept.html").exists()
         assert (worktree / "concept.html").read_text().startswith("<html>")
 
-    def test_feedback_round_trip_regenerates(self, relay_dir):
+    def test_feedback_round_trip_regenerates(self, brigade_dir):
         harness = FakeHarness()
         adapter = FakeAdapter(["make the header darker", APPROVED])
         worker = DesignerWorker(
-            _make_config(), None, relay_dir, harness_runner=harness, review_adapter=adapter
+            _make_config(), None, brigade_dir, harness_runner=harness, review_adapter=adapter
         )
 
         msg = _make_message(
@@ -294,11 +294,11 @@ class TestDesignerWorker:
         assert reply.payload["iterations"] == 2
         assert "make the header darker" in harness.prompts[1]
 
-    def test_iterations_cap_reached_marks_cap_note(self, relay_dir):
+    def test_iterations_cap_reached_marks_cap_note(self, brigade_dir):
         harness = FakeHarness()
         adapter = FakeAdapter(["nope", "still nope", "again"])  # never approves
         worker = DesignerWorker(
-            _make_config(max_loops=3), None, relay_dir,
+            _make_config(max_loops=3), None, brigade_dir,
             harness_runner=harness, review_adapter=adapter,
         )
 
@@ -310,11 +310,11 @@ class TestDesignerWorker:
         assert reply.payload["iterations"] == 3
         assert "ITERATION CAP REACHED" in reply.payload["description"]
 
-    def test_prompt_includes_persona_boundary(self, relay_dir):
+    def test_prompt_includes_persona_boundary(self, brigade_dir):
         harness = FakeHarness()
         adapter = FakeAdapter([APPROVED])
         worker = DesignerWorker(
-            _make_config(), None, relay_dir, harness_runner=harness, review_adapter=adapter
+            _make_config(), None, brigade_dir, harness_runner=harness, review_adapter=adapter
         )
 
         msg = _make_message(
@@ -325,21 +325,21 @@ class TestDesignerWorker:
         assert "Never implement" in harness.prompts[0]
         assert "backend logic" in harness.prompts[0]
 
-    def test_deliver_and_run_once(self, relay_dir):
+    def test_deliver_and_run_once(self, brigade_dir):
         harness = FakeHarness()
         adapter = FakeAdapter([APPROVED])
         worker = DesignerWorker(
-            _make_config(), None, relay_dir, harness_runner=harness, review_adapter=adapter
+            _make_config(), None, brigade_dir, harness_runner=harness, review_adapter=adapter
         )
 
         msg = _make_message(
             "design-request", "interpreter", "designer", {"text": "a landing page"}
         )
-        deliver(msg, relay_dir)
+        deliver(msg, brigade_dir)
         worker.run_once()
 
-        inbox = list_inbox("interpreter", relay_dir)
+        inbox = list_inbox("interpreter", brigade_dir)
         assert len(inbox) == 1
-        reply = consume("interpreter", inbox[0], relay_dir)
+        reply = consume("interpreter", inbox[0], brigade_dir)
         assert reply.type == "design-result"
         assert reply.reply_to == msg.id

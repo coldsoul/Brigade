@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pydantic import ValidationError as PydanticValidationError
 
-from relay.messages.models import PAYLOAD_MODEL_BY_TYPE, Message
-from relay.messages.topology import (
+from brigade.messages.models import PAYLOAD_MODEL_BY_TYPE, Message
+from brigade.messages.topology import (
     OWNER_INTERPRETER_TYPES,
     SENTINEL_TYPES,
     TOPOLOGY,

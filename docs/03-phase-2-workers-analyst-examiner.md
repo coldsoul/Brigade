@@ -40,7 +40,7 @@ A small, hardcoded table (not user-facing config) covering **Anthropic, OpenAI, 
 
 ### 3. Persona loading
 
-`load_persona(role) -> str`: reads `.relay/personas/<role>.md` if present, else falls back to a built-in default persona string for that role, embedded in the package. Every default persona (see structure below) should include:
+`load_persona(role) -> str`: reads `.brigade/personas/<role>.md` if present, else falls back to a built-in default persona string for that role, embedded in the package. Every default persona (see structure below) should include:
 1. Identity at its abstraction level.
 2. Its explicit allowed neighbours (restated in the prompt even though the validator enforces it).
 3. A concrete forbidden-leakage boundary, with at least one negative example.
@@ -49,7 +49,7 @@ A small, hardcoded table (not user-facing config) covering **Anthropic, OpenAI, 
 ### 4. Generic worker loop
 
 A function/class, roughly: `run_worker(role: str)`:
-1. Poll `.relay/mailboxes/<role>/inbox/` (a simple sleep-poll loop is fine for this phase — no need for OS-level file-watching yet).
+1. Poll `.brigade/mailboxes/<role>/inbox/` (a simple sleep-poll loop is fine for this phase — no need for OS-level file-watching yet).
 2. On a new message: `consume()` it.
 3. Build a prompt from `load_persona(role)` + the incoming message's payload.
 4. Call the model via the router, using structured/schema-constrained output when the capability table says the model supports it; otherwise generate freeform and parse, with a bounded retry (feed the specific validation error back to the model) on parse/schema failure. This is the *schema/topology retry* described in the project overview — keep it separate in code from the *EDD loop* concept below.
@@ -63,7 +63,7 @@ This loop should be role-agnostic — Analyst and Examiner differ only in their 
 
 - Consumes `behaviour-to-implement` from its inbox.
 - Produces a `behaviour` message to `examiner`: `{ actor, outcome, boundaries }`, with every trace of *how* stripped out. Use the falling-piece example from the source article as a calibration reference for what "no implementation detail" looks like in the persona prompt.
-- Also handles the **reverse edge**: when it receives `behaviour-status` in its own inbox (from Examiner), it does not forward it verbatim — it *re-authors* a new, further-stripped `behaviour-status` message to `interpreter`, linked via `reply_to`. This is a second, distinct code path in the Analyst worker, not just "relay the same payload."
+- Also handles the **reverse edge**: when it receives `behaviour-status` in its own inbox (from Examiner), it does not forward it verbatim — it *re-authors* a new, further-stripped `behaviour-status` message to `interpreter`, linked via `reply_to`. This is a second, distinct code path in the Analyst worker, not just "brigade the same payload."
 
 ### 6. Examiner role
 

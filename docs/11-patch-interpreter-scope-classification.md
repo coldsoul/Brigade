@@ -24,7 +24,7 @@ This replaces whatever currently-implicit "always dispatch" behavior exists in t
 
 The MCP server itself (from Phase 4) already exposes `dispatch_behaviour`, `dispatch_design_request`, `check_status`, `check_design_status`, and `log_conversation`. This patch adds no new tools — the fix here is entirely about restricting what the Interpreter does *outside* those tools:
 
-- Confirm (or add, if not already true) that the Interpreter's harness session has no direct file-write access to the main project tree outside of what's needed to run read-only inspection commands. If the harness configuration currently grants unrestricted file-write tools to the Interpreter's own session, scope them down so writes are only possible inside worktrees the pipeline itself creates (`.relay/work/`), never in the main tree directly.
+- Confirm (or add, if not already true) that the Interpreter's harness session has no direct file-write access to the main project tree outside of what's needed to run read-only inspection commands. If the harness configuration currently grants unrestricted file-write tools to the Interpreter's own session, scope them down so writes are only possible inside worktrees the pipeline itself creates (`.brigade/work/`), never in the main tree directly.
 - If scoping tool access that precisely isn't practical with your harness's permission model, the fallback is persona-only enforcement (the rule above) — note in the README which approach was actually used, since it changes how much you can trust the guarantee versus how much it depends on the model following instructions.
 
 ### 3. `question`/`result` logging for direct answers

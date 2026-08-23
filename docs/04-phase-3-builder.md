@@ -11,7 +11,7 @@ A Builder worker that, on receiving an `expectation` message, spins up an isolat
 ### 1. Git worktree isolation per behaviour
 
 On receiving an `expectation`:
-- Create `.relay/work/<behaviour_id>/` as a git worktree on a new branch `relay/<behaviour_id>` (`git worktree add`), if one doesn't already exist for this behaviour (a behaviour may cycle through multiple `expectation`/`verdict` rounds — reuse the same worktree/branch across those rounds, don't recreate it each time).
+- Create `.brigade/work/<behaviour_id>/` as a git worktree on a new branch `brigade/<behaviour_id>` (`git worktree add`), if one doesn't already exist for this behaviour (a behaviour may cycle through multiple `expectation`/`verdict` rounds — reuse the same worktree/branch across those rounds, don't recreate it each time).
 - All Builder work for this behaviour happens inside that worktree — never in the main project tree.
 - On the Examiner ultimately accepting the behaviour, the worktree's branch should be mergeable as a clean diff (this phase can implement the merge step, or leave it as a documented manual/CLI step if that's simpler for v1 — your call, but state which one you built).
 - On `escalate: true` (loop cap hit) or explicit rejection, the worktree/branch should be left intact rather than deleted, so a human can inspect what the Builder attempted.
@@ -63,10 +63,10 @@ Rules to enforce, both in the persona prompt and (where mechanically possible) i
 
 ## Acceptance criteria
 
-- [ ] A hand-placed `expectation` message in the Builder's inbox results in a new git worktree being created at `.relay/work/<behaviour_id>/` on a new branch, and the configured harness being invoked inside it.
+- [ ] A hand-placed `expectation` message in the Builder's inbox results in a new git worktree being created at `.brigade/work/<behaviour_id>/` on a new branch, and the configured harness being invoked inside it.
 - [ ] A trivially satisfiable expectation (e.g. "a function `add(a, b)` returns the sum of its arguments") results in a valid `evidence` message with `confidence: "executed"`, a real `command`, and real `raw_output` — verify by hand that the output actually corresponds to something that ran, not text the model invented.
 - [ ] The evidence message contains no leaked implementation detail in the `claim` fields (spot-check against the forbidden-leakage rule) even though the underlying code obviously has function names, file names, etc.
 - [ ] `test_files_touched` correctly lists real files that exist in the worktree after the run.
 - [ ] A `verdict` message placed in the Builder's inbox with an unmet expectation causes the Builder to resume in the *same* worktree/branch (verify via git log or branch state — not a fresh worktree) and produce a new `evidence` message addressing the specific unmet expectation and reason from the verdict.
 - [ ] An expectation that's explicitly not executable in the loop (e.g. something requiring a live third-party API you deliberately don't provide credentials for in the test) results in evidence marked `"partial"` or `"narrative"`, never falsely `"executed"`.
-- [ ] Killing the Builder process mid-run and restarting `relay up` does not lose the worktree or corrupt the branch — the behaviour's work-in-progress survives a crash.
+- [ ] Killing the Builder process mid-run and restarting `brigade up` does not lose the worktree or corrupt the branch — the behaviour's work-in-progress survives a crash.

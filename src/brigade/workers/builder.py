@@ -11,26 +11,26 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from relay.harness import HarnessRunner
-from relay.messages import EvidencePayload, Message
-from relay.worktree import ensure_worktree, git_exclude
-from relay.workers.base import RoleWorker, WorkerError, build_reply
+from brigade.harness import HarnessRunner
+from brigade.messages import EvidencePayload, Message
+from brigade.worktree import ensure_worktree, git_exclude
+from brigade.workers.base import RoleWorker, WorkerError, build_reply
 
 # The evidence report is written *inside* the worktree (so the harness can
 # write to it — harnesses restrict writes to their workspace) and git-excluded
 # so it never leaks into the committed diff.
-EVIDENCE_FILENAME = "relay-evidence.json"
+EVIDENCE_FILENAME = "brigade-evidence.json"
 
 
 class BuilderWorker(RoleWorker):
     role = "builder"
 
-    def __init__(self, config, router, relay_dir: Path, harness_runner=None, **kwargs):
+    def __init__(self, config, router, brigade_dir: Path, harness_runner=None, **kwargs):
         # The Builder never uses the router directly — the harness subprocess
         # manages its own model calls.
-        super().__init__(config, router, relay_dir, **kwargs)
+        super().__init__(config, router, brigade_dir, **kwargs)
         self.harness_runner = harness_runner or HarnessRunner()
-        self.project_root = relay_dir.parent
+        self.project_root = brigade_dir.parent
 
     # ------------------------------------------------------------------
     # Dispatch

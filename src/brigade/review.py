@@ -6,7 +6,7 @@ a specific review tool.  Two implementations ship:
 - `LavishAdapter` — opens the artifact via lavish-axi and flattens the
   annotations into feedback text.
 - `BasicAdapter` — opens the artifact in the OS browser and reads feedback from
-  the `relay up` terminal (always available, no extra dependency).
+  the `brigade up` terminal (always available, no extra dependency).
 
 `select_review_adapter` is the only place in the Designer that knows lavish
 exists.
@@ -88,7 +88,7 @@ class LavishAdapter:
 
 
 class BasicAdapter:
-    """Review via the OS browser + the `relay up` terminal.
+    """Review via the OS browser + the `brigade up` terminal.
 
     Opens the artifact and blocks reading a line of feedback from stdin.
     """

@@ -1,4 +1,4 @@
-"""Config parsing for `.relay/config.toml`."""
+"""Config parsing for `.brigade/config.toml`."""
 
 from __future__ import annotations
 
@@ -40,11 +40,11 @@ class Config(BaseModel):
 
 
 class ConfigError(Exception):
-    """Raised when `.relay/config.toml` is missing or malformed."""
+    """Raised when `.brigade/config.toml` is missing or malformed."""
 
 
-def load_config(relay_dir: Path) -> Config:
-    path = relay_dir / "config.toml"
+def load_config(brigade_dir: Path) -> Config:
+    path = brigade_dir / "config.toml"
     if not path.is_file():
         raise ConfigError(f"No config.toml found at {path}")
 

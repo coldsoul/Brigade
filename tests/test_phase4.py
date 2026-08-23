@@ -10,16 +10,16 @@ from pathlib import Path
 import pytest
 from ulid import ULID
 
-from relay.config import Config
-from relay.interpreter import (
+from brigade.config import Config
+from brigade.interpreter import (
     CONVERSATION_DIRECTION,
     check_status_impl,
     dispatch_behaviour_impl,
     log_conversation_impl,
 )
-from relay.messages import Message
-from relay.storage import deliver, list_inbox, list_ledger, read_message
-from relay.workers import AnalystWorker, BuilderWorker, ExaminerWorker
+from brigade.messages import Message
+from brigade.storage import deliver, list_inbox, list_ledger, read_message
+from brigade.workers import AnalystWorker, BuilderWorker, ExaminerWorker
 
 
 # ---------------------------------------------------------------------------
@@ -30,8 +30,8 @@ def _id() -> str:
     return str(ULID())
 
 
-def _make_relay_dir(tmp_path: Path) -> Path:
-    d = tmp_path / ".relay"
+def _make_brigade_dir(tmp_path: Path) -> Path:
+    d = tmp_path / ".brigade"
     (d / "ledger").mkdir(parents=True)
     for role in ("analyst", "examiner", "builder", "interpreter"):
         (d / "mailboxes" / role / "inbox").mkdir(parents=True)
@@ -56,12 +56,12 @@ def _make_status(behaviour_id: str, outcome: str, summary: str) -> Message:
 
 class TestDispatchBehaviour:
     def test_dispatch_delivers_behaviour_to_implement(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
-        result = dispatch_behaviour_impl(relay_dir, "users need to log in")
+        brigade_dir = _make_brigade_dir(tmp_path)
+        result = dispatch_behaviour_impl(brigade_dir, "users need to log in")
 
-        inbox = list_inbox("analyst", relay_dir)
+        inbox = list_inbox("analyst", brigade_dir)
         assert len(inbox) == 1
-        msg = read_message(inbox[0], relay_dir)
+        msg = read_message(inbox[0], brigade_dir)
         assert msg.type == "behaviour-to-implement"
         assert msg.from_role == "interpreter"
         assert msg.to_role == "analyst"
@@ -70,8 +70,8 @@ class TestDispatchBehaviour:
 
     def test_dispatch_returns_immediately(self, tmp_path):
         # the function must not block — it returns a dict right away
-        relay_dir = _make_relay_dir(tmp_path)
-        result = dispatch_behaviour_impl(relay_dir, "do a thing")
+        brigade_dir = _make_brigade_dir(tmp_path)
+        result = dispatch_behaviour_impl(brigade_dir, "do a thing")
         assert isinstance(result, dict)
         assert "behaviour_id" in result
 
@@ -82,38 +82,38 @@ class TestDispatchBehaviour:
 
 class TestCheckStatus:
     def test_pending_when_no_status(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
-        assert check_status_impl(relay_dir, "nope") == {
+        brigade_dir = _make_brigade_dir(tmp_path)
+        assert check_status_impl(brigade_dir, "nope") == {
             "outcome": "pending",
             "summary": None,
         }
 
     def test_solved_status_is_consumed(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
+        brigade_dir = _make_brigade_dir(tmp_path)
         bid = _id()
         status = _make_status(bid, "solved", "the login behaviour is complete")
-        deliver(status, relay_dir)
+        deliver(status, brigade_dir)
 
-        result = check_status_impl(relay_dir, bid)
+        result = check_status_impl(brigade_dir, bid)
         assert result == {"outcome": "solved", "summary": "the login behaviour is complete"}
 
         # pointer consumed, ledger entry remains
-        assert list_inbox("interpreter", relay_dir) == []
-        assert read_message(status.id, relay_dir).payload["outcome"] == "solved"
+        assert list_inbox("interpreter", brigade_dir) == []
+        assert read_message(status.id, brigade_dir).payload["outcome"] == "solved"
 
     def test_blocked_status(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
+        brigade_dir = _make_brigade_dir(tmp_path)
         bid = _id()
-        deliver(_make_status(bid, "blocked", "loop cap reached"), relay_dir)
-        assert check_status_impl(relay_dir, bid)["outcome"] == "blocked"
+        deliver(_make_status(bid, "blocked", "loop cap reached"), brigade_dir)
+        assert check_status_impl(brigade_dir, bid)["outcome"] == "blocked"
 
     def test_ignores_status_for_other_behaviour(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
-        deliver(_make_status(_id(), "solved", "other"), relay_dir)
-        result = check_status_impl(relay_dir, "different-id")
+        brigade_dir = _make_brigade_dir(tmp_path)
+        deliver(_make_status(_id(), "solved", "other"), brigade_dir)
+        result = check_status_impl(brigade_dir, "different-id")
         assert result["outcome"] == "pending"
         # the unrelated status was not consumed
-        assert len(list_inbox("interpreter", relay_dir)) == 1
+        assert len(list_inbox("interpreter", brigade_dir)) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -139,10 +139,10 @@ class TestLogConversation:
         assert CONVERSATION_DIRECTION[msg_type] == (expected_from, expected_to)
 
     def test_log_writes_to_ledger_not_inbox(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
-        mid = log_conversation_impl(relay_dir, "problem", "I need a login form")
+        brigade_dir = _make_brigade_dir(tmp_path)
+        mid = log_conversation_impl(brigade_dir, "problem", "I need a login form")
 
-        msg = read_message(mid, relay_dir)
+        msg = read_message(mid, brigade_dir)
         assert msg.type == "problem"
         assert msg.from_role == "owner"
         assert msg.to_role == "interpreter"
@@ -150,13 +150,13 @@ class TestLogConversation:
 
         # never touches an inbox
         for role in ("analyst", "examiner", "builder", "interpreter"):
-            assert list_inbox(role, relay_dir) == []
+            assert list_inbox(role, brigade_dir) == []
 
     def test_reply_to_chaining(self, tmp_path):
-        relay_dir = _make_relay_dir(tmp_path)
-        first = log_conversation_impl(relay_dir, "problem", "need a thing")
-        second = log_conversation_impl(relay_dir, "roadmap", "two increments", reply_to=first)
-        assert read_message(second, relay_dir).reply_to == first
+        brigade_dir = _make_brigade_dir(tmp_path)
+        first = log_conversation_impl(brigade_dir, "problem", "need a thing")
+        second = log_conversation_impl(brigade_dir, "roadmap", "two increments", reply_to=first)
+        assert read_message(second, brigade_dir).reply_to == first
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +165,7 @@ class TestLogConversation:
 
 class TestMCPServer:
     def test_all_tools_registered(self):
-        from relay.mcp_server import mcp
+        from brigade.mcp_server import mcp
 
         tools = asyncio.run(mcp.list_tools())
         names = {t.name for t in tools}
@@ -193,7 +193,7 @@ class FakeRouter:
 class FakeHarness:
     def run(self, harness, model, workdir, prompt):
         import re
-        from relay.harness import HarnessResult
+        from brigade.harness import HarnessResult
 
         evidence = {
             "evidence": [
@@ -228,11 +228,11 @@ class TestEndToEnd:
             ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "init"],
             cwd=project_root, check=True, capture_output=True,
         )
-        relay_dir = project_root / ".relay"
-        (relay_dir / "ledger").mkdir(parents=True)
+        brigade_dir = project_root / ".brigade"
+        (brigade_dir / "ledger").mkdir(parents=True)
         for role in ("analyst", "examiner", "builder", "interpreter"):
-            (relay_dir / "mailboxes" / role / "inbox").mkdir(parents=True)
-        (relay_dir / "personas").mkdir()
+            (brigade_dir / "mailboxes" / role / "inbox").mkdir(parents=True)
+        (brigade_dir / "personas").mkdir()
 
         config = Config.model_validate(
             {
@@ -244,14 +244,14 @@ class TestEndToEnd:
                 },
             }
         )
-        return relay_dir, config
+        return brigade_dir, config
 
     def test_behaviour_flows_down_and_back(self, env):
-        relay_dir, config = env
+        brigade_dir, config = env
 
         # 1. Owner's problem is logged, then dispatched by the Interpreter
-        log_conversation_impl(relay_dir, "problem", "I need a login form")
-        result = dispatch_behaviour_impl(relay_dir, "a user can log in")
+        log_conversation_impl(brigade_dir, "problem", "I need a login form")
+        result = dispatch_behaviour_impl(brigade_dir, "a user can log in")
         behaviour_id = result["behaviour_id"]
 
         # 2. Pipeline: analyst → examiner → builder → examiner → analyst
@@ -273,9 +273,9 @@ class TestEndToEnd:
             }),
         ])
 
-        analyst = AnalystWorker(config, router, relay_dir)
-        examiner = ExaminerWorker(config, router, relay_dir)
-        builder = BuilderWorker(config, router, relay_dir, harness_runner=FakeHarness())
+        analyst = AnalystWorker(config, router, brigade_dir)
+        examiner = ExaminerWorker(config, router, brigade_dir)
+        builder = BuilderWorker(config, router, brigade_dir, harness_runner=FakeHarness())
 
         # drive the pipeline in order until the status reaches the interpreter
         analyst.run_once()      # behaviour → examiner inbox
@@ -285,12 +285,12 @@ class TestEndToEnd:
         analyst.run_once()      # behaviour-status → interpreter inbox
 
         # 3. The Interpreter polls and gets "solved"
-        status = check_status_impl(relay_dir, behaviour_id)
+        status = check_status_impl(brigade_dir, behaviour_id)
         assert status["outcome"] == "solved"
         assert "login" in status["summary"]
 
         # 4. reply_to chain is intact end to end
-        final = list_ledger(relay_dir, behaviour_id=behaviour_id)
+        final = list_ledger(brigade_dir, behaviour_id=behaviour_id)
         by_id = {m.id: m for m in final}
         # follow reply_to from the interpreter-bound status all the way back
         chain = []

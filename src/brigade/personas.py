@@ -117,14 +117,14 @@ keeping the same paths, and write the updated description.
 }
 
 
-def load_persona(role: str, relay_dir: Path | None = None) -> str:
+def load_persona(role: str, brigade_dir: Path | None = None) -> str:
     """Return the persona string for *role*.
 
-    Reads `.relay/personas/<role>.md` when present, otherwise falls back to the
+    Reads `.brigade/personas/<role>.md` when present, otherwise falls back to the
     built-in default.  Returns an empty string if neither exists.
     """
-    if relay_dir is not None:
-        path = relay_dir / "personas" / f"{role}.md"
+    if brigade_dir is not None:
+        path = brigade_dir / "personas" / f"{role}.md"
         if path.is_file():
             return path.read_text(encoding="utf-8")
 
