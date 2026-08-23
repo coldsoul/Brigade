@@ -1,6 +1,7 @@
 """Brigade CLI — entry point for all brigade commands."""
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -352,7 +353,9 @@ def _rmtree_safe(path: Path):
 # ---------------------------------------------------------------------------
 
 @main.command()
-def up():
+@click.option("--quiet", is_flag=True, help="Only show warnings and errors.")
+@click.option("--verbose", is_flag=True, help="Show debug output.")
+def up(quiet: bool, verbose: bool):
     """Start the Brigade role workers as foreground tasks."""
     import threading
     import time
@@ -371,7 +374,14 @@ def up():
     brigade_dir = _require_brigade_project()
     config = load_config(brigade_dir)
     router = LiteLLMRouter()
-    configure_logging()
+
+    if quiet:
+        level = logging.WARNING
+    elif verbose:
+        level = logging.DEBUG
+    else:
+        level = logging.INFO
+    configure_logging(level=level, log_dir=brigade_dir / "logs")
 
     workers = [
         AnalystWorker(config, router, brigade_dir),
