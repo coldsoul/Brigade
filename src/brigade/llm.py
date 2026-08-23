@@ -7,6 +7,10 @@ imports fast and tests never load it.
 
 from __future__ import annotations
 
+import logging
+
+from brigade.logging_config import silence_litellm
+
 
 class ModelRouter:
     """Abstract model router — returns raw model text output."""
@@ -21,6 +25,10 @@ class LiteLLMRouter(ModelRouter):
     def complete(self, model: str, prompt: str, json_mode: bool = False) -> str:
         import litellm  # lazy import
 
+        # litellm attaches its own stderr StreamHandler on import — drop it so
+        # its logs route through our handlers instead of drawing over the TUI.
+        silence_litellm()
+
         kwargs: dict = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
@@ -30,4 +38,16 @@ class LiteLLMRouter(ModelRouter):
 
         response = litellm.completion(**kwargs)
         content = response.choices[0].message.content
+
+        usage = getattr(response, "usage", None)
+        logging.getLogger(model.split("/", 1)[0]).info(
+            "usage",
+            extra={
+                "event": "usage",
+                "model": model,
+                "prompt_tokens": getattr(usage, "prompt_tokens", 0),
+                "completion_tokens": getattr(usage, "completion_tokens", 0),
+            },
+        )
+
         return content or ""

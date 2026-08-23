@@ -20,22 +20,26 @@ class CorrelationFormatter(logging.Formatter):
 
 
 def configure_logging(
-    level: int = logging.INFO, log_dir: Path | None = None
+    level: int = logging.INFO, log_dir: Path | None = None, console: bool = True
 ) -> None:
     """Configure the root logger with a consistent, human-readable format.
 
-    Logs always go to the console; when *log_dir* is given, they are also
-    written to `log_dir / "brigade.log"` with rotation.
+    Logs go to the console by default; when *log_dir* is given they are also
+    written to `log_dir / "brigade.log"` with rotation.  Pass `console=False`
+    when a TUI owns the terminal (so log lines don't corrupt the display).
     """
     root = logging.getLogger()
     for handler in root.handlers[:]:
         root.removeHandler(handler)
 
+    silence_litellm()
+
     formatter = CorrelationFormatter(_FORMAT, datefmt=_DATE_FORMAT)
 
-    console = logging.StreamHandler()
-    console.setFormatter(formatter)
-    root.addHandler(console)
+    if console:
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        root.addHandler(console_handler)
 
     if log_dir is not None:
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -46,3 +50,20 @@ def configure_logging(
         root.addHandler(file_handler)
 
     root.setLevel(level)
+
+
+def silence_litellm() -> None:
+    """Completely disable litellm's own logging.
+
+    litellm attaches StreamHandlers to several loggers at import time and logs
+    "LiteLLM completion() …" at INFO level.  Since litellm is imported lazily,
+    this is called both at configure time and after the first `import litellm`.
+    It detaches the handlers, stops propagation, and raises the level so that no
+    litellm record of any severity is emitted anywhere.
+    """
+    for name in ("LiteLLM", "LiteLLM Router", "LiteLLM Proxy", "litellm"):
+        logger = logging.getLogger(name)
+        logger.disabled = True  # fully inert — no records, no lastResort fallback
+        logger.handlers = []
+        logger.propagate = False
+        logger.setLevel(logging.CRITICAL)

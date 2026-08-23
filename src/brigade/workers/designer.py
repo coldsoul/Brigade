@@ -132,6 +132,11 @@ class DesignerWorker(RoleWorker):
 
         prompt = self._build_prompt(instruction)
 
+        self.logger.info(
+            "harness starting",
+            extra={"behaviour_id": behaviour_id, "event": "harness_start"},
+        )
+
         start = time.monotonic()
         result = self.harness_runner.run(harness, model, worktree, prompt)
         duration = time.monotonic() - start

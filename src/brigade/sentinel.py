@@ -356,6 +356,11 @@ class Sentinel:
 
         self.cursor = full[-1].id
 
+        logger.info(
+            "scan complete",
+            extra={"event": "scan_complete", "concern_count": len(concerns)},
+        )
+
         if not concerns:
             return []
         return self._emit(concerns)

@@ -356,9 +356,8 @@ def _rmtree_safe(path: Path):
 @click.option("--quiet", is_flag=True, help="Only show warnings and errors.")
 @click.option("--verbose", is_flag=True, help="Show debug output.")
 def up(quiet: bool, verbose: bool):
-    """Start the Brigade role workers as foreground tasks."""
+    """Start the Brigade role workers and the live dashboard."""
     import threading
-    import time
 
     from brigade.config import load_config
     from brigade.llm import LiteLLMRouter
@@ -381,7 +380,7 @@ def up(quiet: bool, verbose: bool):
         level = logging.DEBUG
     else:
         level = logging.INFO
-    configure_logging(level=level, log_dir=brigade_dir / "logs")
+    configure_logging(level=level, log_dir=brigade_dir / "logs", console=False)
 
     workers = [
         AnalystWorker(config, router, brigade_dir),
@@ -400,15 +399,13 @@ def up(quiet: bool, verbose: bool):
     for t in threads:
         t.start()
 
-    click.echo(
-        f"Brigade workers started: {', '.join(w.role for w in workers)}, sentinel"
-    )
-    click.echo("Press Ctrl+C to stop.")
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        click.echo("\nStopping.")
+    # Launch the TUI dashboard on the main thread, wiring log events into it.
+    from brigade.tui.app import BrigadeApp
+    from brigade.tui.bridge import TUILogHandler
+
+    app = BrigadeApp(brigade_dir)
+    logging.getLogger().addHandler(TUILogHandler(app))
+    app.run()
 
 
 # ---------------------------------------------------------------------------

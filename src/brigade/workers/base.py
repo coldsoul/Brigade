@@ -108,7 +108,14 @@ class RoleWorker:
     def _dispatch(self, msg: Message) -> None:
         self.logger.info(
             "consuming %s (%s)", msg.type, msg.id,
-            extra={"behaviour_id": msg.behaviour_id},
+            extra={
+                "behaviour_id": msg.behaviour_id,
+                "event": "consuming",
+                "message_type": msg.type,
+                "message_id": msg.id,
+                "loop_count": msg.payload.get("loop_count"),
+                "max_loops": msg.payload.get("max_loops"),
+            },
         )
         reply = self.process(msg)
         if reply is None:
@@ -117,7 +124,13 @@ class RoleWorker:
         deliver(reply, self.brigade_dir)
         self.logger.info(
             "produced %s → %s (%s)", reply.type, reply.to_role, reply.id,
-            extra={"behaviour_id": reply.behaviour_id},
+            extra={
+                "behaviour_id": reply.behaviour_id,
+                "event": "produced",
+                "message_type": reply.type,
+                "message_id": reply.id,
+                "to_role": reply.to_role,
+            },
         )
 
     def _log_harness(self, behaviour_id: str, result, duration: float) -> Path:
@@ -135,7 +148,11 @@ class RoleWorker:
         self.logger.info(
             "harness exited %s in %.1fs — %s",
             result.exit_code, duration, path,
-            extra={"behaviour_id": behaviour_id},
+            extra={
+                "behaviour_id": behaviour_id,
+                "event": "harness_end",
+                "duration_s": duration,
+            },
         )
         return path
 

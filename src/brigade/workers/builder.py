@@ -102,6 +102,11 @@ class BuilderWorker(RoleWorker):
             f"object to this exact path:\n{evidence_path}"
         )
 
+        self.logger.info(
+            "harness starting",
+            extra={"behaviour_id": behaviour_id, "event": "harness_start"},
+        )
+
         start = time.monotonic()
         result = self.harness_runner.run(harness, model, worktree, full_prompt)
         duration = time.monotonic() - start
