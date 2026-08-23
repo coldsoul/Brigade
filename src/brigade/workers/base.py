@@ -106,13 +106,19 @@ class RoleWorker:
     # ------------------------------------------------------------------
 
     def _dispatch(self, msg: Message) -> None:
-        self.logger.info("consuming %s (%s)", msg.type, msg.id)
+        self.logger.info(
+            "consuming %s (%s)", msg.type, msg.id,
+            extra={"behaviour_id": msg.behaviour_id},
+        )
         reply = self.process(msg)
         if reply is None:
             return
         validate(reply)
         deliver(reply, self.brigade_dir)
-        self.logger.info("produced %s → %s (%s)", reply.type, reply.to_role, reply.id)
+        self.logger.info(
+            "produced %s → %s (%s)", reply.type, reply.to_role, reply.id,
+            extra={"behaviour_id": reply.behaviour_id},
+        )
 
     def _model_name(self) -> str:
         model = self.config.roles.get(self.role)
