@@ -249,3 +249,51 @@ class TestSummarizeBehaviours:
 
     def test_empty_ledger(self, brigade_dir):
         assert summarize_behaviours(brigade_dir) == []
+
+
+# ---------------------------------------------------------------------------
+# redirect_fds_to_file (patch 14)
+# ---------------------------------------------------------------------------
+
+class TestRedirectFds:
+    def test_redirects_and_restores(self, tmp_path):
+        import subprocess
+        import sys
+
+        path = tmp_path / "logs" / "stray.log"
+        code = (
+            "import os\n"
+            "from pathlib import Path\n"
+            "from brigade.logging_config import redirect_fds_to_file\n"
+            f"with redirect_fds_to_file(Path({str(path)!r})):\n"
+            "    os.write(1, b'stdout line\\n')\n"
+            "    os.write(2, b'stderr line\\n')\n"
+            "os.write(1, b'restored stdout\\n')\n"
+        )
+        result = subprocess.run([sys.executable, "-c", code], capture_output=True)
+
+        content = path.read_text()
+        assert "stdout line" in content
+        assert "stderr line" in content
+        assert b"restored stdout" in result.stdout  # fd 1 restored after the block
+
+    def test_restores_on_exception(self, tmp_path):
+        import subprocess
+        import sys
+
+        path = tmp_path / "logs" / "stray.log"
+        code = (
+            "import os\n"
+            "from pathlib import Path\n"
+            "from brigade.logging_config import redirect_fds_to_file\n"
+            "try:\n"
+            f"    with redirect_fds_to_file(Path({str(path)!r})):\n"
+            "        raise RuntimeError('boom')\n"
+            "except RuntimeError:\n"
+            "    pass\n"
+            "os.write(1, b'still alive\\n')\n"
+        )
+        result = subprocess.run([sys.executable, "-c", code], capture_output=True)
+
+        assert result.returncode == 0
+        assert b"still alive" in result.stdout  # fd 1 restored after the exception

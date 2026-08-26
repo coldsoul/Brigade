@@ -400,12 +400,15 @@ def up(quiet: bool, verbose: bool):
         t.start()
 
     # Launch the TUI dashboard on the main thread, wiring log events into it.
+    from brigade.logging_config import redirect_fds_to_file
     from brigade.tui.app import BrigadeApp
     from brigade.tui.bridge import TUILogHandler
 
     app = BrigadeApp(brigade_dir)
     logging.getLogger().addHandler(TUILogHandler(app))
-    app.run()
+    stray_output_path = brigade_dir / "logs" / "stray-output.log"
+    with redirect_fds_to_file(stray_output_path):
+        app.run()
 
 
 # ---------------------------------------------------------------------------
