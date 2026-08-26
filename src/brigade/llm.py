@@ -15,14 +15,14 @@ from brigade.logging_config import silence_litellm
 class ModelRouter:
     """Abstract model router — returns raw model text output."""
 
-    def complete(self, model: str, prompt: str, json_mode: bool = False) -> str:
+    def complete(self, model: str, prompt: str, role: str, json_mode: bool = False) -> str:
         raise NotImplementedError
 
 
 class LiteLLMRouter(ModelRouter):
     """Routes `provider/model` strings through LiteLLM."""
 
-    def complete(self, model: str, prompt: str, json_mode: bool = False) -> str:
+    def complete(self, model: str, prompt: str, role: str, json_mode: bool = False) -> str:
         import litellm  # lazy import
 
         # litellm attaches its own stderr StreamHandler on import — drop it so
@@ -40,7 +40,7 @@ class LiteLLMRouter(ModelRouter):
         content = response.choices[0].message.content
 
         usage = getattr(response, "usage", None)
-        logging.getLogger(model.split("/", 1)[0]).info(
+        logging.getLogger(role).info(
             "usage",
             extra={
                 "event": "usage",

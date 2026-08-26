@@ -63,7 +63,6 @@ class OverviewScreen(Screen):
         self.usage = {
             role: {"model": "", "prompt": 0, "completion": 0} for role in ROLES
         }
-        self._last_role: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -85,7 +84,6 @@ class OverviewScreen(Screen):
     # -- event handlers (called by the App's on_role_event/on_usage_event) ----
 
     def handle_role_event(self, event: RoleEvent) -> None:
-        self._last_role = event.role
         table = self.query_one("#roles", DataTable)
 
         if event.event == "consuming":
@@ -111,9 +109,8 @@ class OverviewScreen(Screen):
             table.update_cell(event.role, "behaviour", behaviour)
 
     def handle_usage_event(self, event: UsageEvent) -> None:
-        role = self._last_role
-        if role not in ROLES:
-            # No preceding RoleEvent to attribute this usage to — skip.
+        role = event.role
+        if role not in self.usage:
             return
         usage = self.usage[role]
         usage["model"] = event.model

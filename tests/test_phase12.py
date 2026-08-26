@@ -80,13 +80,13 @@ class TestLLMUsage:
 
         router = LiteLLMRouter()
         with caplog.at_level(logging.INFO):
-            result = router.complete("deepseek/deepseek-v4-pro", "prompt")
+            result = router.complete("deepseek/deepseek-v4-pro", "prompt", "analyst")
 
         assert result == "hi"
         records = [r for r in caplog.records if getattr(r, "event", None) == "usage"]
         assert len(records) == 1
         r = records[0]
-        assert r.name == "deepseek"  # provider
+        assert r.name == "analyst"  # role, not provider
         assert r.model == "deepseek/deepseek-v4-pro"
         assert r.prompt_tokens == 123
         assert r.completion_tokens == 45
@@ -179,7 +179,7 @@ class TestTUILogHandler:
         handler = TUILogHandler(app)
         handler.emit(
             self._record(
-                name="deepseek",
+                name="analyst",
                 event="usage",
                 model="deepseek/deepseek-v4-pro",
                 prompt_tokens=10,
@@ -190,6 +190,7 @@ class TestTUILogHandler:
         assert len(app.messages) == 1
         event = app.messages[0]
         assert isinstance(event, UsageEvent)
+        assert event.role == "analyst"
         assert event.provider == "deepseek"
         assert event.prompt_tokens == 10
         assert event.completion_tokens == 20
@@ -297,3 +298,52 @@ class TestRedirectFds:
 
         assert result.returncode == 0
         assert b"still alive" in result.stdout  # fd 1 restored after the exception
+
+
+# ---------------------------------------------------------------------------
+# Usage attribution race (patch 13)
+# ---------------------------------------------------------------------------
+
+class TestUsageAttribution:
+    def test_usage_lands_on_own_role_not_last_role(self, tmp_path):
+        import asyncio
+
+        from brigade.tui.app import BrigadeApp
+        from brigade.tui.events import RoleEvent, UsageEvent
+        from textual.widgets import DataTable
+
+        d = tmp_path / ".brigade"
+        (d / "ledger").mkdir(parents=True)
+        for role in ("analyst", "examiner", "builder", "designer", "interpreter"):
+            (d / "mailboxes" / role / "inbox").mkdir(parents=True)
+
+        async def run():
+            app = BrigadeApp(d)
+            async with app.run_test(size=(100, 30)) as pilot:
+                await pilot.pause()
+                # Builder emits a RoleEvent (would have set _last_role="builder" pre-fix)
+                app.post_message(
+                    RoleEvent(role="builder", event="consuming", message_type="expectation", behaviour_id="01M0B")
+                )
+                # Examiner's usage arrives interleaved — must land on examiner, not builder
+                app.post_message(
+                    UsageEvent(
+                        role="examiner",
+                        provider="deepseek",
+                        model="deepseek/deepseek-v4-flash",
+                        prompt_tokens=1000,
+                        completion_tokens=200,
+                        ts=1.0,
+                    )
+                )
+                await pilot.pause()
+                await pilot.pause()
+
+                table = app.overview.query_one("#roles", DataTable)
+                examiner_cost = table.get_row_at(table.get_row_index("examiner"))[3]
+                builder_cost = table.get_row_at(table.get_row_index("builder"))[3]
+
+                assert examiner_cost != "$0.00", "examiner's usage must land on examiner's row"
+                assert builder_cost == "$0.00", "builder's row must not be credited with examiner's usage"
+
+        asyncio.run(run())

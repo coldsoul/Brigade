@@ -389,6 +389,7 @@ class Sentinel:
                 model,
                 prompt,
                 LeakVerdict,
+                role="sentinel",
                 overrides=self.config.capabilities.model_overrides,
                 label="leak verdict",
             )

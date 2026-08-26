@@ -181,6 +181,7 @@ class RoleWorker:
                 model,
                 prompt,
                 schema,
+                role=self.role,
                 overrides=self.config.capabilities.model_overrides,
                 label=output_label,
             )

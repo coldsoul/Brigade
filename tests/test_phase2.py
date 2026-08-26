@@ -80,7 +80,7 @@ class FakeRouter(ModelRouter):
         self.responses = list(responses)
         self.calls: list[str] = []
 
-    def complete(self, model: str, prompt: str, json_mode: bool = False) -> str:
+    def complete(self, model: str, prompt: str, role: str, json_mode: bool = False) -> str:
         self.calls.append(prompt)
         if not self.responses:
             return "{}"

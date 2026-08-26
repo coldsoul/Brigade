@@ -25,6 +25,7 @@ def call_for_schema(
     model: str,
     prompt: str,
     schema: type[BaseModel],
+    role: str,
     overrides: dict | None = None,
     max_retries: int = MAX_SCHEMA_RETRIES,
     label: str = "output",
@@ -48,7 +49,7 @@ def call_for_schema(
                   "required schema."
             )
 
-        raw = router.complete(model, full_prompt, json_mode=json_mode)
+        raw = router.complete(model, full_prompt, role, json_mode=json_mode)
 
         try:
             data = _parse_json(raw)

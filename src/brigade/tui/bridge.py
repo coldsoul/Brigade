@@ -26,9 +26,11 @@ class TUILogHandler(logging.Handler):
             return
 
         if event_type == "usage":
+            model = getattr(record, "model", "")
             event = UsageEvent(
-                provider=record.name,
-                model=getattr(record, "model", ""),
+                role=record.name,
+                provider=model.split("/", 1)[0] if model else record.name,
+                model=model,
                 prompt_tokens=getattr(record, "prompt_tokens", 0),
                 completion_tokens=getattr(record, "completion_tokens", 0),
                 ts=record.created,

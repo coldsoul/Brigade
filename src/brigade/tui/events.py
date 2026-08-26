@@ -45,10 +45,11 @@ class RoleEvent(Message):
 
 
 class UsageEvent(Message):
-    """A token-usage record from a model call, attributed to a provider."""
+    """A token-usage record from a model call, attributed to a role."""
 
     def __init__(
         self,
+        role: str,
         provider: str,
         model: str,
         prompt_tokens: int,
@@ -56,6 +57,7 @@ class UsageEvent(Message):
         ts: float,
     ):
         super().__init__()
+        self.role = role
         self.provider = provider
         self.model = model
         self.prompt_tokens = prompt_tokens
