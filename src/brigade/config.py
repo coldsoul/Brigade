@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 
 class ProjectConfig(BaseModel):
     max_loops: int = 3
+    model_timeout_seconds: int = 120
 
 
 class RoleConfig(BaseModel):
@@ -17,6 +18,7 @@ class RoleConfig(BaseModel):
     harness: str | None = None
     review_tool: str = "auto"  # designer-only: "auto" | "lavish" | "basic"
     scan_every: int = 10  # sentinel-only: scan after N new ledger messages
+    model_timeout_seconds: int | None = None  # optional per-role override
 
 
 class CapabilitiesConfig(BaseModel):
@@ -37,6 +39,17 @@ class Config(BaseModel):
                 "configured — set it to 'claude' or 'opencode'"
             )
         return self
+
+    def role_timeout(self, role: str) -> int:
+        """Resolve *role*'s effective model-call timeout in seconds.
+
+        A `[roles.<role>].model_timeout_seconds` override wins; otherwise the
+        `[project].model_timeout_seconds` default applies.
+        """
+        role_cfg = self.roles.get(role)
+        if role_cfg is not None and role_cfg.model_timeout_seconds is not None:
+            return role_cfg.model_timeout_seconds
+        return self.project.model_timeout_seconds
 
 
 class ConfigError(Exception):

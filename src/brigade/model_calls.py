@@ -8,6 +8,7 @@ retries on parse/schema failure with the specific error fed back to the model.
 from __future__ import annotations
 
 import json
+import logging
 
 from pydantic import BaseModel, ValidationError as PydanticValidationError
 
@@ -29,6 +30,7 @@ def call_for_schema(
     overrides: dict | None = None,
     max_retries: int = MAX_SCHEMA_RETRIES,
     label: str = "output",
+    timeout: float | None = None,
 ) -> dict:
     """Call *model* via *router* and return its output validated against *schema*.
 
@@ -38,8 +40,10 @@ def call_for_schema(
     caps = resolve_capabilities(model, overrides or {})
     json_mode = caps.structured_output in ("strict", "loose")
 
+    from litellm import Timeout as LitellmTimeout  # lazy import
+
     errors: list[str] = []
-    for _ in range(max_retries):
+    for attempt in range(1, max_retries + 1):
         full_prompt = prompt
         if errors:
             full_prompt += (
@@ -49,7 +53,18 @@ def call_for_schema(
                   "required schema."
             )
 
-        raw = router.complete(model, full_prompt, role, json_mode=json_mode)
+        try:
+            raw = router.complete(
+                model, full_prompt, role, json_mode=json_mode, timeout=timeout
+            )
+        except LitellmTimeout:
+            logging.getLogger(role).warning(
+                "model call timed out after %ss (attempt %d/%d)",
+                timeout, attempt, max_retries,
+                extra={"event": "model_timeout"},
+            )
+            errors.append(f"timed out after {timeout}s")
+            continue
 
         try:
             data = _parse_json(raw)

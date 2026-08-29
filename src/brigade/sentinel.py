@@ -392,6 +392,7 @@ class Sentinel:
                 role="sentinel",
                 overrides=self.config.capabilities.model_overrides,
                 label="leak verdict",
+                timeout=self.config.role_timeout("sentinel"),
             )
         except ModelCallError as exc:
             logger.warning("leak confirmation failed, trusting heuristic: %s", exc)

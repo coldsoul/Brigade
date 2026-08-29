@@ -15,14 +15,28 @@ from brigade.logging_config import silence_litellm
 class ModelRouter:
     """Abstract model router — returns raw model text output."""
 
-    def complete(self, model: str, prompt: str, role: str, json_mode: bool = False) -> str:
+    def complete(
+        self,
+        model: str,
+        prompt: str,
+        role: str,
+        json_mode: bool = False,
+        timeout: float | None = None,
+    ) -> str:
         raise NotImplementedError
 
 
 class LiteLLMRouter(ModelRouter):
     """Routes `provider/model` strings through LiteLLM."""
 
-    def complete(self, model: str, prompt: str, role: str, json_mode: bool = False) -> str:
+    def complete(
+        self,
+        model: str,
+        prompt: str,
+        role: str,
+        json_mode: bool = False,
+        timeout: float | None = None,
+    ) -> str:
         import litellm  # lazy import
 
         # litellm attaches its own stderr StreamHandler on import — drop it so
@@ -35,6 +49,8 @@ class LiteLLMRouter(ModelRouter):
         }
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
 
         response = litellm.completion(**kwargs)
         content = response.choices[0].message.content

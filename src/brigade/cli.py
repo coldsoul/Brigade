@@ -21,6 +21,7 @@ CONFIG_TOML_TEMPLATE = """\
 
 [project]
 max_loops = 3
+model_timeout_seconds = 120   # per-model-call timeout; roles can override via model_timeout_seconds
 
 [roles.interpreter]
 # No model config needed — the Interpreter is the coding harness itself

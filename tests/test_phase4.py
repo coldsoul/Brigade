@@ -186,7 +186,7 @@ class FakeRouter:
     def __init__(self, responses):
         self.responses = list(responses)
 
-    def complete(self, model, prompt, role, json_mode=False):
+    def complete(self, model, prompt, role, json_mode=False, timeout=None):
         return self.responses.pop(0)
 
 

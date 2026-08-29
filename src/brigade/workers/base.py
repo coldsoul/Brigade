@@ -184,6 +184,7 @@ class RoleWorker:
                 role=self.role,
                 overrides=self.config.capabilities.model_overrides,
                 label=output_label,
+                timeout=self.config.role_timeout(self.role),
             )
         except ModelCallError as exc:
             raise WorkerError(str(exc)) from exc
