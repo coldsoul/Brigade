@@ -128,6 +128,7 @@ scan_every = 10                    # run a scan after this many new ledger messa
 ### Model capabilities
 
 A small built-in table tracks whether each provider supports structured output: Anthropic and OpenAI are treated as `strict`, Deepseek as `loose` (JSON mode only, no native JSON schema), and anything unknown falls back to `none` (freeform output, parsed and retried).
+The `strict` tier is real: those models receive the pydantic schema as provider-native constrained decoding, with a fallback to plain JSON mode if the provider rejects the schema.
 `[capabilities.model_overrides]` is the escape hatch to correct a missing or wrong entry.
 
 ## CLI reference
@@ -165,6 +166,7 @@ Failures are surfaced rather than hidden inside worker threads:
 - **Model-call timeout.** Every model call is bounded by `model_timeout_seconds` (default `120`). A timeout is retried like any transient failure and logs a `model_timeout` warning per attempt.
 - **Worker error surfacing.** Each worker logs `worker_start` and `worker_exit` around its loop, catches per-message errors (logging the full traceback to `brigade.log` and continuing), and the dashboard marks a failed role in red (`ERROR`, `CRASHED`, or `stopped`).
 - **Liveness.** The dashboard checks each worker thread once per second; a worker whose thread died without logging `worker_exit` renders as `DIED (no exit logged)`.
+- **Crash-safe processing.** Claiming a message moves its pointer into an `in-progress/` staging dir; it is only cleared once the reply is delivered. A worker that dies mid-processing leaves the message recoverable, and the next startup moves it back into the inbox.
 
 While the dashboard owns the terminal, the process's real stdout/stderr are redirected to `.brigade/logs/stray-output.log`, so third-party output can't corrupt the display.
 Worker tracebacks go to `.brigade/logs/brigade.log` (via each role's logger), not `stray-output.log`.
@@ -247,3 +249,5 @@ The tests cover the message envelope and validator, the ledger and mailbox primi
 - **Patch 15** — bounded model calls (`model_timeout_seconds`), with timeouts retried rather than fatal.
 - **Patch 16** — fail-fast runtime config validation at `brigade up` startup.
 - **Patch 17** — worker error surfacing and liveness: worker lifecycle logging plus dashboard `ERROR`/`CRASHED`/`DIED` states.
+- **Patch 18** — crash-safe message processing: `in-progress/` staging plus startup recovery, so a worker death mid-processing can't lose the message.
+- **Patch 19** — strict schema-constrained decoding: `strict` models now get the pydantic schema passed through, with graceful fallback to JSON mode.
