@@ -410,7 +410,7 @@ def up(quiet: bool, verbose: bool):
     from brigade.tui.app import BrigadeApp
     from brigade.tui.bridge import TUILogHandler
 
-    app = BrigadeApp(brigade_dir)
+    app = BrigadeApp(brigade_dir, worker_threads=threads)
     logging.getLogger().addHandler(TUILogHandler(app))
     stray_output_path = brigade_dir / "logs" / "stray-output.log"
     with redirect_fds_to_file(stray_output_path):

@@ -63,6 +63,9 @@ class OverviewScreen(Screen):
         self.usage = {
             role: {"model": "", "prompt": 0, "completion": 0} for role in ROLES
         }
+        # Roles that logged a terminal event (worker_exit/worker_crashed).  Used
+        # by the liveness check to tell a clean exit from a hard kill.
+        self.exited_roles: set[str] = set()
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -80,6 +83,25 @@ class OverviewScreen(Screen):
         for role in ROLES:
             depth = len(list_inbox(role, self.brigade_dir))
             table.add_row(role, f"{depth} pending", "—", "$0.00", key=role)
+        self.set_interval(1.0, self._check_liveness)
+
+    def _check_liveness(self) -> None:
+        """Mark workers whose thread died without logging worker_exit as DIED."""
+        threads = getattr(self.app, "worker_threads", {})
+        if not threads:
+            return
+        table = self.query_one("#roles", DataTable)
+        for role, thread in threads.items():
+            if role in self.exited_roles:
+                continue
+            if not thread.is_alive():
+                table.update_cell(
+                    role,
+                    "status",
+                    "[red]DIED (no exit logged)[/red]",
+                    update_width=True,
+                )
+                table.update_cell(role, "behaviour", "—")
 
     # -- event handlers (called by the App's on_role_event/on_usage_event) ----
 
@@ -101,6 +123,22 @@ class OverviewScreen(Screen):
         elif event.event == "scan_complete":
             status = f"scan: {event.concern_count} concerns"
             behaviour = "—"
+        elif event.event == "worker_start":
+            status = "running"
+            behaviour = "—"
+        elif event.event == "worker_error":
+            status = f"[red]ERROR[/red] - {event.text or 'unknown error'}"
+            behaviour = "—"
+        elif event.event == "worker_crashed":
+            status = "[red]CRASHED[/red]"
+            behaviour = "—"
+            self.exited_roles.add(event.role)
+        elif event.event == "worker_exit":
+            if event.role in self.exited_roles:
+                return  # already terminal (crashed)
+            status = "stopped"
+            behaviour = "—"
+            self.exited_roles.add(event.role)
         else:
             return
 
@@ -222,9 +260,10 @@ class BrigadeApp(App):
     TITLE = "Brigade"
     BINDINGS = [Binding("q", "quit", "Quit", priority=True)]
 
-    def __init__(self, brigade_dir: Path):
+    def __init__(self, brigade_dir: Path, worker_threads: list | None = None):
         super().__init__()
         self.brigade_dir = brigade_dir
+        self.worker_threads = {t.name: t for t in (worker_threads or [])}
         self.overview = OverviewScreen(brigade_dir)
 
     def get_default_screen(self) -> Screen:
@@ -243,6 +282,6 @@ class BrigadeApp(App):
         self.push_screen(FlagsScreen(self.brigade_dir))
 
 
-def run_dashboard(brigade_dir: Path) -> None:
+def run_dashboard(brigade_dir: Path, worker_threads: list | None = None) -> None:
     """Launch the dashboard (blocking)."""
-    BrigadeApp(brigade_dir).run()
+    BrigadeApp(brigade_dir, worker_threads=worker_threads).run()

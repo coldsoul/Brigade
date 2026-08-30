@@ -14,7 +14,15 @@ class RoleEvent(Message):
         self,
         role: str,
         event: Literal[
-            "consuming", "produced", "harness_start", "harness_end", "scan_complete"
+            "consuming",
+            "produced",
+            "harness_start",
+            "harness_end",
+            "scan_complete",
+            "worker_start",
+            "worker_error",
+            "worker_crashed",
+            "worker_exit",
         ],
         behaviour_id: str | None = None,
         message_type: str | None = None,

@@ -79,10 +79,23 @@ class RoleWorker:
     # ------------------------------------------------------------------
 
     def run(self) -> None:
-        """Block forever, polling the inbox and processing messages."""
-        while True:
-            self.run_once()
-            time.sleep(self.poll_interval)
+        """Block forever, polling the inbox and processing messages.
+
+        A per-message failure is logged and skipped (the worker keeps going); a
+        failure in the poll loop itself is logged before the thread exits; and
+        worker exit is always logged loudly.
+        """
+        self.logger.info("worker started", extra={"event": "worker_start"})
+        try:
+            while True:
+                self.run_once()
+                time.sleep(self.poll_interval)
+        except Exception:
+            self.logger.exception(
+                "worker loop crashed", extra={"event": "worker_crashed"}
+            )
+        finally:
+            self.logger.error("worker exiting", extra={"event": "worker_exit"})
 
     def run_once(self) -> bool:
         """Process all currently-pending inbox messages once.
@@ -93,8 +106,14 @@ class RoleWorker:
         if not ids:
             return False
         for msg_id in ids:
-            msg = consume(self.role, msg_id, self.brigade_dir)
-            self._dispatch(msg)
+            try:
+                msg = consume(self.role, msg_id, self.brigade_dir)
+                self._dispatch(msg)
+            except Exception:
+                self.logger.exception(
+                    "error processing message %s", msg_id,
+                    extra={"event": "worker_error", "message_id": msg_id},
+                )
         return True
 
     def process(self, msg: Message) -> Message | None:

@@ -327,10 +327,23 @@ class Sentinel:
 
     def run(self) -> None:
         """Block forever, scanning on the configured cadence."""
-        while True:
-            if self._new_count() >= self.scan_every:
-                self.scan_once()
-            time.sleep(self.poll_interval)
+        logger.info("worker started", extra={"event": "worker_start"})
+        try:
+            while True:
+                try:
+                    if self._new_count() >= self.scan_every:
+                        self.scan_once()
+                except Exception:
+                    logger.exception(
+                        "error during scan", extra={"event": "worker_error"}
+                    )
+                time.sleep(self.poll_interval)
+        except Exception:
+            logger.exception(
+                "worker loop crashed", extra={"event": "worker_crashed"}
+            )
+        finally:
+            logger.error("worker exiting", extra={"event": "worker_exit"})
 
     def _new_count(self) -> int:
         full = list_ledger(self.brigade_dir)
