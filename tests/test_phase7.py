@@ -435,7 +435,7 @@ class FakeRouter:
         self.responses = list(responses)
         self.calls: list[str] = []
 
-    def complete(self, model, prompt, role, json_mode=False, timeout=None):
+    def complete(self, model, prompt, role, json_mode=False, schema=None, timeout=None):
         self.calls.append(prompt)
         return self.responses.pop(0)
 

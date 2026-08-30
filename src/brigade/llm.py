@@ -21,6 +21,7 @@ class ModelRouter:
         prompt: str,
         role: str,
         json_mode: bool = False,
+        schema: dict | None = None,
         timeout: float | None = None,
     ) -> str:
         raise NotImplementedError
@@ -35,6 +36,7 @@ class LiteLLMRouter(ModelRouter):
         prompt: str,
         role: str,
         json_mode: bool = False,
+        schema: dict | None = None,
         timeout: float | None = None,
     ) -> str:
         import litellm  # lazy import
@@ -47,7 +49,13 @@ class LiteLLMRouter(ModelRouter):
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
         }
-        if json_mode:
+        if schema is not None:
+            # Provider-native schema-constrained decoding (strict tier).
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "response", "schema": schema, "strict": True},
+            }
+        elif json_mode:
             kwargs["response_format"] = {"type": "json_object"}
         if timeout is not None:
             kwargs["timeout"] = timeout

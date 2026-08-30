@@ -81,7 +81,7 @@ class TestTimeoutRetry:
         calls = {"n": 0}
 
         class _FlakyRouter(ModelRouter):
-            def complete(self, model, prompt, role, json_mode=False, timeout=None):
+            def complete(self, model, prompt, role, json_mode=False, schema=None, timeout=None):
                 calls["n"] += 1
                 if calls["n"] == 1:
                     raise litellm.Timeout("simulated timeout", "deepseek/deepseek-v4-flash", "deepseek")
@@ -97,7 +97,7 @@ class TestTimeoutRetry:
         import litellm
 
         class _AlwaysTimeoutRouter(ModelRouter):
-            def complete(self, model, prompt, role, json_mode=False, timeout=None):
+            def complete(self, model, prompt, role, json_mode=False, schema=None, timeout=None):
                 raise litellm.Timeout("simulated timeout", "deepseek/deepseek-v4-flash", "deepseek")
 
         with caplog.at_level(logging.WARNING):

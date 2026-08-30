@@ -38,8 +38,17 @@ def call_for_schema(
     model never produces output matching the schema within `max_retries`.
     """
     caps = resolve_capabilities(model, overrides or {})
-    json_mode = caps.structured_output in ("strict", "loose")
+    mode = caps.structured_output  # "strict" | "loose" | "none"
 
+    json_schema = None
+    json_mode = False
+    if mode == "strict":
+        json_schema = schema.model_json_schema()  # computed once, above the loop
+    elif mode == "loose":
+        json_mode = True
+    # mode == "none": neither — rely on prompt + parse/validate retry only
+
+    from litellm import BadRequestError as LitellmBadRequestError  # lazy import
     from litellm import Timeout as LitellmTimeout  # lazy import
 
     errors: list[str] = []
@@ -55,7 +64,8 @@ def call_for_schema(
 
         try:
             raw = router.complete(
-                model, full_prompt, role, json_mode=json_mode, timeout=timeout
+                model, full_prompt, role,
+                json_mode=json_mode, schema=json_schema, timeout=timeout,
             )
         except LitellmTimeout:
             logging.getLogger(role).warning(
@@ -65,6 +75,16 @@ def call_for_schema(
             )
             errors.append(f"timed out after {timeout}s")
             continue
+        except LitellmBadRequestError as exc:
+            if json_schema is not None and _looks_like_response_format_error(exc):
+                logging.getLogger(role).warning(
+                    "model %s rejected strict schema decoding - falling back to JSON mode",
+                    model, extra={"event": "strict_fallback"},
+                )
+                json_schema = None
+                json_mode = True
+                continue
+            raise
 
         try:
             data = _parse_json(raw)
@@ -102,3 +122,17 @@ def _format_error(exc: Exception) -> str:
             for e in exc.errors()
         )
     return str(exc)
+
+
+def _looks_like_response_format_error(exc: Exception) -> bool:
+    """Return True if *exc* looks like the provider rejected our response_format.
+
+    Kept conservative — a genuine bad-prompt 400 should still raise, not silently
+    downgrade — so this only matches errors that name the response_format.
+    """
+    message = str(exc).lower()
+    return (
+        "response_format" in message
+        or "json_schema" in message
+        or "schema" in message
+    )
