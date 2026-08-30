@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import tomllib
 from pathlib import Path
 
 from pydantic import BaseModel, Field, model_validator
+
+from brigade.capabilities import PROVIDER_ENV_VAR
 
 
 class ProjectConfig(BaseModel):
@@ -70,3 +74,55 @@ def load_config(brigade_dir: Path) -> Config:
         return Config.model_validate(data)
     except Exception as exc:
         raise ConfigError(f"Invalid config.toml: {exc}") from exc
+
+
+def validate_runtime_config(config: Config) -> None:
+    """Check every role brigade will actually run is ready to make model calls.
+
+    Raises `ConfigError` (with all problems collected, not just the first) if any
+    role has no model, a malformed model string, or a known provider whose API
+    key is missing from the environment.  Warnings (unknown provider) are logged
+    but do not raise.
+    """
+    problems: list[str] = []
+    warnings: list[str] = []
+
+    # The roles that make model calls and must be configured to run.
+    # Interpreter is the harness itself (not a brigade worker) — excluded.
+    required_roles = ["analyst", "examiner", "builder", "designer", "sentinel"]
+
+    for role in required_roles:
+        role_cfg = config.roles.get(role)
+        model = role_cfg.model if role_cfg else None
+
+        if not model:
+            problems.append(f"{role}: no model configured in [roles.{role}]")
+            continue
+
+        if "/" not in model:
+            problems.append(
+                f"{role}: model {model!r} is not in 'provider/model' form "
+                f"(e.g. 'anthropic/claude-sonnet-5')"
+            )
+            continue
+
+        provider = model.split("/", 1)[0]
+        env_var = PROVIDER_ENV_VAR.get(provider)
+        if env_var is None:
+            warnings.append(
+                f"{role}: provider {provider!r} is not one brigade knows the key "
+                f"convention for — can't verify its API key is set"
+            )
+        elif not os.environ.get(env_var):
+            problems.append(
+                f"{role}: {env_var} is not set (required for model {model})"
+            )
+
+    for w in warnings:
+        logging.getLogger("brigade").warning(w)
+
+    if problems:
+        raise ConfigError(
+            "Configuration problems prevent startup:\n  - "
+            + "\n  - ".join(problems)
+        )

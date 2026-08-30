@@ -28,6 +28,14 @@ BUILTIN_CAPABILITIES: dict[str, ModelCapabilities] = {
     "deepseek": ModelCapabilities(structured_output="loose"),
 }
 
+# provider → environment variable holding its API key (LiteLLM conventions)
+PROVIDER_ENV_VAR: dict[str, str] = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+}
+
 
 def _split_provider(model: str) -> str:
     return model.split("/", 1)[0]

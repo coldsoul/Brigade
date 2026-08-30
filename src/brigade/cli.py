@@ -360,7 +360,7 @@ def up(quiet: bool, verbose: bool):
     """Start the Brigade role workers and the live dashboard."""
     import threading
 
-    from brigade.config import load_config
+    from brigade.config import ConfigError, load_config, validate_runtime_config
     from brigade.llm import LiteLLMRouter
     from brigade.logging_config import configure_logging
     from brigade.sentinel import Sentinel
@@ -372,7 +372,12 @@ def up(quiet: bool, verbose: bool):
     )
 
     brigade_dir = _require_brigade_project()
-    config = load_config(brigade_dir)
+    try:
+        config = load_config(brigade_dir)
+        validate_runtime_config(config)
+    except ConfigError as exc:
+        click.echo(f"error: {exc}", err=True)
+        raise SystemExit(1)
     router = LiteLLMRouter()
 
     if quiet:
