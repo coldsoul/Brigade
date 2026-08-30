@@ -1,12 +1,15 @@
 """Mailbox — transient queue state layered on top of the ledger.
 
 Each mailbox inbox contains pointer files (empty marker files) referencing
-unconsumed ledger entries.  Once consumed, the pointer is deleted but the
-ledger entry persists forever.
+unconsumed ledger entries.  Claiming a message moves its pointer from `inbox/`
+to `in-progress/`; the pointer is only deleted by `complete()` once the reply
+has been delivered, so a crash mid-processing leaves a recoverable trace.
+The ledger entry itself persists forever.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from brigade.messages.models import Message
@@ -41,18 +44,54 @@ def list_inbox(role: str, brigade_dir: Path) -> list[str]:
 
 
 def consume(role: str, message_id: str, brigade_dir: Path) -> Message:
-    """Claim a message from *role*'s inbox.
+    """Claim a message from *role*'s inbox for processing.
 
-    Reads the full message from the ledger, removes the inbox pointer,
-    and returns the message.  Raises `FileNotFoundError` if the pointer
-    does not exist.
+    Atomically moves the inbox pointer into `in-progress/` rather than deleting
+    it, so a crash before the reply is delivered leaves a recoverable trace.
+    The pointer is cleared only by `complete()`, after delivery succeeds.
+    Raises `FileNotFoundError` if the pointer does not exist.
     """
-    pointer = brigade_dir / "mailboxes" / role / "inbox" / message_id
-    if not pointer.is_file():
+    inbox_pointer = brigade_dir / "mailboxes" / role / "inbox" / message_id
+    if not inbox_pointer.is_file():
         raise FileNotFoundError(
             f"No message '{message_id}' in {role}'s inbox"
         )
 
-    message = read_message(message_id, brigade_dir)
-    pointer.unlink()
-    return message
+    in_progress_dir = brigade_dir / "mailboxes" / role / "in-progress"
+    in_progress_dir.mkdir(parents=True, exist_ok=True)
+    in_progress_pointer = in_progress_dir / message_id
+    os.replace(inbox_pointer, in_progress_pointer)  # atomic on same filesystem
+
+    return read_message(message_id, brigade_dir)  # unchanged: read from ledger
+
+
+def complete(role: str, message_id: str, brigade_dir: Path) -> None:
+    """Mark a claimed message as fully processed, removing its in-progress pointer.
+
+    Called only after the worker has successfully delivered its reply (or
+    deliberately produced no reply).  Safe to call if the pointer is already
+    gone.
+    """
+    in_progress_pointer = brigade_dir / "mailboxes" / role / "in-progress" / message_id
+    in_progress_pointer.unlink(missing_ok=True)
+
+
+def recover_in_progress(role: str, brigade_dir: Path) -> list[str]:
+    """Move any messages stranded in `in-progress/` back into the inbox.
+
+    Called once when a worker starts.  A pointer in `in-progress/` means a
+    previous run claimed the message but never completed it (crash, kill, bug).
+    Returns the list of recovered message ids so the caller can log them.
+    """
+    in_progress_dir = brigade_dir / "mailboxes" / role / "in-progress"
+    if not in_progress_dir.is_dir():
+        return []
+
+    inbox_dir = brigade_dir / "mailboxes" / role / "inbox"
+    inbox_dir.mkdir(parents=True, exist_ok=True)
+
+    recovered = []
+    for pointer in in_progress_dir.iterdir():
+        os.replace(pointer, inbox_dir / pointer.name)
+        recovered.append(pointer.name)
+    return recovered

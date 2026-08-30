@@ -15,7 +15,7 @@ from brigade.llm import ModelRouter
 from brigade.messages import Message, validate
 from brigade.model_calls import ModelCallError, call_for_schema
 from brigade.personas import load_persona
-from brigade.storage import consume, deliver, list_inbox
+from brigade.storage import complete, consume, deliver, list_inbox, recover_in_progress
 
 POLL_INTERVAL = 0.5
 
@@ -81,10 +81,17 @@ class RoleWorker:
     def run(self) -> None:
         """Block forever, polling the inbox and processing messages.
 
-        A per-message failure is logged and skipped (the worker keeps going); a
-        failure in the poll loop itself is logged before the thread exits; and
-        worker exit is always logged loudly.
+        Recovers any messages stranded by a previous unclean shutdown, then
+        loops.  A per-message failure is logged and left in `in-progress/` for
+        the next startup to recover; a failure in the poll loop itself is logged
+        before the thread exits; and worker exit is always logged loudly.
         """
+        for msg_id in recover_in_progress(self.role, self.brigade_dir):
+            self.logger.warning(
+                "recovered message %s from a previous unclean shutdown",
+                msg_id,
+                extra={"event": "message_recovered", "message_id": msg_id},
+            )
         self.logger.info("worker started", extra={"event": "worker_start"})
         try:
             while True:
@@ -109,11 +116,13 @@ class RoleWorker:
             try:
                 msg = consume(self.role, msg_id, self.brigade_dir)
                 self._dispatch(msg)
+                complete(self.role, msg_id, self.brigade_dir)  # only on success
             except Exception:
                 self.logger.exception(
                     "error processing message %s", msg_id,
                     extra={"event": "worker_error", "message_id": msg_id},
                 )
+                # pointer stays in in-progress/ — recovered on next startup
         return True
 
     def process(self, msg: Message) -> Message | None:

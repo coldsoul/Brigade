@@ -139,6 +139,9 @@ class OverviewScreen(Screen):
             status = "stopped"
             behaviour = "—"
             self.exited_roles.add(event.role)
+        elif event.event == "message_recovered":
+            status = f"[yellow]recovered[/yellow] {_short(event.message_id)}"
+            behaviour = "—"
         else:
             return
 

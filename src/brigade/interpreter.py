@@ -13,7 +13,7 @@ from pathlib import Path
 from ulid import ULID
 
 from brigade.messages import Message
-from brigade.storage import consume, deliver, list_inbox, read_message, write_message
+from brigade.storage import complete, consume, deliver, list_inbox, read_message, write_message
 
 # Owner ↔ Interpreter message types → (from_role, to_role).  Inferred from the
 # type: "problem" comes from the Owner, "roadmap"/"increment"/"result" go to the
@@ -61,6 +61,7 @@ def check_status_impl(brigade_dir: Path, behaviour_id: str) -> dict:
         msg = read_message(msg_id, brigade_dir)
         if msg.type == "behaviour-status" and msg.payload.get("behaviour_id") == behaviour_id:
             consume("interpreter", msg_id, brigade_dir)
+            complete("interpreter", msg_id, brigade_dir)
             return {
                 "outcome": msg.payload.get("outcome", "pending"),
                 "summary": msg.payload.get("summary"),
@@ -98,6 +99,7 @@ def check_design_status_impl(brigade_dir: Path, behaviour_id: str) -> dict:
         msg = read_message(msg_id, brigade_dir)
         if msg.type == "design-result" and msg.behaviour_id == behaviour_id:
             consume("interpreter", msg_id, brigade_dir)
+            complete("interpreter", msg_id, brigade_dir)
             return {
                 "status": "done",
                 "artifact_ref": msg.payload.get("artifact_ref"),

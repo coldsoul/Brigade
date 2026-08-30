@@ -23,6 +23,7 @@ class RoleEvent(Message):
             "worker_error",
             "worker_crashed",
             "worker_exit",
+            "message_recovered",
         ],
         behaviour_id: str | None = None,
         message_type: str | None = None,
