@@ -74,34 +74,30 @@ def silence_litellm() -> None:
 
 @contextlib.contextmanager
 def redirect_fds_to_file(path: Path):
-    """Redirect the process's real stdout/stderr file descriptors to *path*.
+    """Redirect the process's real stdout file descriptor to *path*.
 
     Unlike `contextlib.redirect_stdout`, this operates at the OS file-descriptor
     level (via `os.dup2`), so it catches writes from C extensions and any
-    dependency that writes directly to fd 1/2 rather than through Python's
-    `sys.stdout`/`logging` — which is exactly what's needed while a Textual app
-    owns the terminal. Restores the original fds on exit, including on an
+    dependency that writes directly to fd 1 rather than through Python's
+    `sys.stdout`/`logging`. Restores the original fd on exit, including on an
     unhandled exception.
+
+    stderr (fd 2) is deliberately left alone: Textual renders the dashboard to
+    stderr, so redirecting it would draw the TUI into the file instead of the
+    terminal.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     log_fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_APPEND)
 
     stdout_fd = sys.stdout.fileno()
-    stderr_fd = sys.stderr.fileno()
     saved_stdout_fd = os.dup(stdout_fd)
-    saved_stderr_fd = os.dup(stderr_fd)
 
     try:
         sys.stdout.flush()
-        sys.stderr.flush()
         os.dup2(log_fd, stdout_fd)
-        os.dup2(log_fd, stderr_fd)
         yield
     finally:
         sys.stdout.flush()
-        sys.stderr.flush()
         os.dup2(saved_stdout_fd, stdout_fd)
-        os.dup2(saved_stderr_fd, stderr_fd)
         os.close(saved_stdout_fd)
-        os.close(saved_stderr_fd)
         os.close(log_fd)

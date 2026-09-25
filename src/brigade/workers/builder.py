@@ -14,7 +14,13 @@ from pathlib import Path
 
 from brigade.harness import HarnessRunner
 from brigade.messages import EvidencePayload, Message
-from brigade.worktree import ensure_worktree, git_exclude
+from brigade.worktree import (
+    CommitError,
+    commit_worktree,
+    ensure_worktree,
+    git_exclude,
+    worktree_base,
+)
 from brigade.workers.base import RoleWorker, WorkerError, build_reply
 
 # The evidence report is written *inside* the worktree (so the harness can
@@ -42,6 +48,8 @@ class BuilderWorker(RoleWorker):
             return self._handle_expectation(msg)
         if msg.type == "verdict":
             return self._handle_verdict(msg)
+        if msg.type == "commit-request":
+            return self._handle_commit_request(msg)
         return None
 
     # ------------------------------------------------------------------
@@ -76,6 +84,45 @@ class BuilderWorker(RoleWorker):
         )
         evidence = self._run_harness(worktree, prompt, expectation_ids, msg.behaviour_id)
         return build_reply(msg, "examiner", "evidence", evidence)
+
+    def _handle_commit_request(self, msg: Message) -> Message:
+        """Commit the worktree now that the Examiner has accepted the evidence.
+
+        The commit is done by the Builder's own wrapper code (not the harness
+        agent), and the branch point is compared so "solved" can never be
+        reported when the harness produced no code changes.
+        """
+        worktree = ensure_worktree(self.project_root, msg.behaviour_id)
+        base = worktree_base(self.project_root, msg.behaviour_id)
+        summary = (msg.payload.get("summary", "") or "").strip()
+        message = f"feat: {summary}" if summary else "feat: implement behaviour"
+
+        payload = {
+            "branch": f"brigade/{msg.behaviour_id}",
+            "summary": summary,
+        }
+        try:
+            commit_hash = commit_worktree(worktree, base, message)
+            payload["commit_hash"] = commit_hash
+            self.logger.info(
+                "committed %s on %s",
+                commit_hash[:8],
+                payload["branch"],
+                extra={
+                    "event": "committed",
+                    "behaviour_id": msg.behaviour_id,
+                    "commit_hash": commit_hash,
+                },
+            )
+        except CommitError as exc:
+            payload["commit_hash"] = None
+            payload["error"] = str(exc)
+            self.logger.error(
+                "commit failed: %s",
+                exc,
+                extra={"event": "commit_failed", "behaviour_id": msg.behaviour_id},
+            )
+        return build_reply(msg, "examiner", "committed", payload)
 
     # ------------------------------------------------------------------
     # Harness invocation + evidence packaging
@@ -122,22 +169,38 @@ class BuilderWorker(RoleWorker):
             data = json.loads(evidence_path.read_text(encoding="utf-8"))
             validated = EvidencePayload.model_validate(data)
             return validated.model_dump()
-        except (FileNotFoundError, json.JSONDecodeError, ValueError) as exc:
+        except (FileNotFoundError, json.JSONDecodeError, ValueError):
             # The harness failed to produce a valid evidence report.  Produce a
             # conservative narrative fallback so the Examiner has something to
-            # judge rather than the worker silently dropping the round.
-            self.logger.warning("no valid evidence written: %s", exc)
+            # judge, and surface the harness's own error so a failed round is
+            # diagnosable rather than a silent loop.
+            self._log_harness_failure(result)
             return self._fallback_evidence(result, expectation_ids)
+
+    def _log_harness_failure(self, result) -> None:
+        """Log why the harness produced no report, using its own error output."""
+        detail = (result.stderr or result.stdout or "").strip()
+        first_line = detail.splitlines()[0] if detail else "(no output)"
+        self.logger.error(
+            "harness produced no evidence report (exit %d): %s",
+            result.exit_code,
+            first_line,
+            extra={
+                "event": "harness_failed",
+                "exit_code": result.exit_code,
+            },
+        )
 
     def _fallback_evidence(
         self, result, expectation_ids: list[str]
     ) -> dict:
-        raw = (result.stderr or result.stdout or "").strip()[:1000]
+        raw = (result.stderr or result.stdout or "").strip()[:2000]
+        claim = self._harness_failure_claim(result)
         return {
             "evidence": [
                 {
                     "expectation_id": expectation_id,
-                    "claim": "the harness session did not produce valid evidence",
+                    "claim": claim,
                     "execution": {
                         "command": " ".join(result.command),
                         "raw_output": raw,
@@ -149,6 +212,20 @@ class BuilderWorker(RoleWorker):
             ],
             "test_files_touched": [],
         }
+
+    def _harness_failure_claim(self, result) -> str:
+        """A plain-language description of the failure, for the Examiner."""
+        detail = (result.stderr or result.stdout or "").strip()
+        first_line = detail.splitlines()[0][:200] if detail else "(no output)"
+        if result.exit_code == 0:
+            return (
+                "the harness session exited cleanly but wrote no evidence "
+                f"report ({first_line})"
+            )
+        return (
+            f"the harness session failed with exit code {result.exit_code} "
+            f"({first_line})"
+        )
 
     # ------------------------------------------------------------------
     # Config helpers

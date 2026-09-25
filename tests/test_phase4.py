@@ -195,6 +195,8 @@ class FakeHarness:
         import re
         from brigade.harness import HarnessResult
 
+        # create a code change so the commit step has something to commit
+        (workdir / "app.py").write_text("def login():\n    return True\n")
         evidence = {
             "evidence": [
                 {
@@ -281,6 +283,8 @@ class TestEndToEnd:
         analyst.run_once()      # behaviour → examiner inbox
         examiner.run_once()     # expectation → builder inbox
         builder.run_once()      # evidence → examiner inbox
+        examiner.run_once()     # commit-request → builder inbox
+        builder.run_once()      # committed → examiner inbox (commits the change)
         examiner.run_once()     # behaviour-status → analyst inbox
         analyst.run_once()      # behaviour-status → interpreter inbox
 

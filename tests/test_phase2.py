@@ -339,7 +339,7 @@ class TestExaminer:
         deliver(evidence, brigade_dir)
         return evidence
 
-    def test_evidence_all_satisfied_yields_solved(self, tmp_path):
+    def test_evidence_all_satisfied_yields_commit_request(self, tmp_path):
         brigade_dir = _make_brigade_dir(tmp_path)
         router = FakeRouter([
             json.dumps({
@@ -353,11 +353,59 @@ class TestExaminer:
         self._place_evidence(brigade_dir)
         worker.run_once()
 
+        inbox = list_inbox("builder", brigade_dir)
+        assert len(inbox) == 1
+        reply = consume("builder", inbox[0], brigade_dir)
+        assert reply.type == "commit-request"
+        assert reply.payload["summary"] == "the login behaviour works"
+
+    def test_committed_yields_solved(self, tmp_path):
+        brigade_dir = _make_brigade_dir(tmp_path)
+        worker = ExaminerWorker(_make_config(), FakeRouter([]), brigade_dir)
+
+        committed = _make_message(
+            "committed",
+            "builder",
+            "examiner",
+            {
+                "commit_hash": "abc123",
+                "branch": "brigade/01M",
+                "summary": "the login behaviour works",
+            },
+        )
+        deliver(committed, brigade_dir)
+        worker.run_once()
+
         inbox = list_inbox("analyst", brigade_dir)
         assert len(inbox) == 1
         reply = consume("analyst", inbox[0], brigade_dir)
         assert reply.type == "behaviour-status"
         assert reply.payload["outcome"] == "solved"
+        assert reply.payload["summary"] == "the login behaviour works"
+
+    def test_commit_failed_yields_blocked(self, tmp_path):
+        brigade_dir = _make_brigade_dir(tmp_path)
+        worker = ExaminerWorker(_make_config(), FakeRouter([]), brigade_dir)
+
+        committed = _make_message(
+            "committed",
+            "builder",
+            "examiner",
+            {
+                "commit_hash": None,
+                "branch": "brigade/01M",
+                "summary": "the login behaviour works",
+                "error": "no changes to commit",
+            },
+        )
+        deliver(committed, brigade_dir)
+        worker.run_once()
+
+        inbox = list_inbox("analyst", brigade_dir)
+        assert len(inbox) == 1
+        reply = consume("analyst", inbox[0], brigade_dir)
+        assert reply.type == "behaviour-status"
+        assert reply.payload["outcome"] == "blocked"
 
     def test_evidence_unmet_below_cap_yields_verdict(self, tmp_path):
         brigade_dir = _make_brigade_dir(tmp_path)

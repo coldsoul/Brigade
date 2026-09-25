@@ -47,6 +47,7 @@ class TUILogHandler(logging.Handler):
                 max_loops=getattr(record, "max_loops", None),
                 duration_s=getattr(record, "duration_s", None),
                 concern_count=getattr(record, "concern_count", None),
+                restart_count=getattr(record, "restart_count", None),
                 text=record.getMessage(),
                 level=record.levelname,
                 ts=record.created,

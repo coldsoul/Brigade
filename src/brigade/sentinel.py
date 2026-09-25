@@ -305,6 +305,8 @@ def _similar(a: str, b: str) -> bool:
 class Sentinel:
     """Periodically scans the ledger and emits advisory/warning messages."""
 
+    role = "sentinel"
+
     def __init__(
         self,
         config,

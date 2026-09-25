@@ -11,11 +11,20 @@ import subprocess
 from pathlib import Path
 
 
+class CommitError(Exception):
+    """Raised when a worktree commit cannot be produced."""
+
+
+def _base_path(project_root: Path, behaviour_id: str) -> Path:
+    return project_root / ".brigade" / "work" / f"{behaviour_id}.base"
+
+
 def ensure_worktree(project_root: Path, behaviour_id: str) -> Path:
     """Return the worktree path for *behaviour_id*, creating it if needed.
 
     Idempotent: reuses an existing worktree/branch across rounds rather than
-    recreating it.
+    recreating it.  Records the branch-point commit so a later commit step can
+    tell a real commit apart from "the harness did nothing".
     """
     worktree_path = project_root / ".brigade" / "work" / behaviour_id
 
@@ -23,13 +32,93 @@ def ensure_worktree(project_root: Path, behaviour_id: str) -> Path:
         return worktree_path
 
     branch = f"brigade/{behaviour_id}"
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
     subprocess.run(
         ["git", "worktree", "add", "-b", branch, str(worktree_path)],
         cwd=project_root,
         capture_output=True,
         check=True,
     )
+    _base_path(project_root, behaviour_id).write_text(base + "\n")
     return worktree_path
+
+
+def worktree_base(project_root: Path, behaviour_id: str) -> str:
+    """Return the commit the worktree branch was created from.
+
+    Falls back to `git merge-base` for worktrees created before the base was
+    recorded.
+    """
+    path = _base_path(project_root, behaviour_id)
+    if path.is_file():
+        return path.read_text().strip()
+
+    branch = f"brigade/{behaviour_id}"
+    result = subprocess.run(
+        ["git", "merge-base", branch, "HEAD"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def commit_worktree(worktree_path: Path, base_commit: str, message: str) -> str:
+    """Commit all changes in *worktree_path* and return the resulting commit hash.
+
+    Raises `CommitError` when no commit was produced — either the harness made
+    no code changes (branch still at *base_commit*), or `git` itself failed.
+    """
+    add = subprocess.run(
+        ["git", "add", "-A"],
+        cwd=worktree_path,
+        capture_output=True,
+        text=True,
+    )
+    if add.returncode != 0:
+        raise CommitError(f"git add failed: {add.stderr.strip()}")
+
+    commit = subprocess.run(
+        [
+            "git",
+            "-c", "user.name=Brigade Builder",
+            "-c", "user.email=brigade@localhost",
+            "commit",
+            "-m",
+            message,
+        ],
+        cwd=worktree_path,
+        capture_output=True,
+        text=True,
+    )
+    if commit.returncode == 0:
+        return _head_commit(worktree_path)
+
+    if "nothing to commit" in (commit.stderr + commit.stdout):
+        head = _head_commit(worktree_path)
+        if head and head != base_commit:
+            return head  # the harness already committed its work
+        raise CommitError("no changes to commit — the harness produced no code changes")
+
+    raise CommitError(f"git commit failed: {(commit.stderr or commit.stdout).strip()}")
+
+
+def _head_commit(worktree_path: Path) -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=worktree_path,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise CommitError(f"git rev-parse HEAD failed: {result.stderr.strip()}")
+    return result.stdout.strip()
 
 
 def current_branch(worktree_path: Path) -> str:

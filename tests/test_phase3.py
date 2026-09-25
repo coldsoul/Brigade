@@ -12,7 +12,7 @@ import pytest
 from ulid import ULID
 
 from brigade.config import Config
-from brigade.harness import HarnessResult
+from brigade.harness import HarnessResult, HarnessRunner
 from brigade.messages import Message
 from brigade.storage import consume, deliver, list_inbox
 from brigade.worktree import current_branch, has_worktree
@@ -336,7 +336,7 @@ class TestBuilder:
 
         assert reply.payload["evidence"][0]["confidence"] == "narrative"
 
-    def test_harness_failure_produces_narrative_fallback(self, brigade_dir):
+    def test_harness_failure_produces_narrative_fallback(self, brigade_dir, caplog):
         harness = FakeHarness(evidence_payload=None)  # harness fails, writes nothing
         worker = BuilderWorker(_make_config(), None, brigade_dir, harness_runner=harness)
 
@@ -355,6 +355,89 @@ class TestBuilder:
 
         # fallback narrative evidence, never falsely "executed"
         assert reply.payload["evidence"][0]["confidence"] == "narrative"
+        # the failure is surfaced, not buried in a generic claim
+        assert "exit code 1" in reply.payload["evidence"][0]["claim"]
+        assert "harness failed" in reply.payload["evidence"][0]["execution"]["raw_output"]
+        # and it is logged as a structured event so the dashboard shows it
+        failed = [r for r in caplog.records if getattr(r, "event", None) == "harness_failed"]
+        assert len(failed) == 1
+        assert "harness failed" in failed[0].getMessage()
+
+    def test_opencode_harness_runs_headless_with_auto_approve(self):
+        runner = HarnessRunner()
+        cmd = runner._build_command("opencode", "deepseek/deepseek-flash", "hi")
+        assert cmd[0] == "opencode"
+        assert "--auto" in cmd
+        assert "--pure" in cmd
+        assert cmd[-2:] == ["--model", "deepseek/deepseek-flash"]
+
+    def test_commit_request_commits_worktree(self, brigade_dir):
+        harness = FakeHarness(
+            evidence_payload=_executed_evidence(),
+            files_to_create={"app.py": "def login():\n    return True\n"},
+        )
+        worker = BuilderWorker(_make_config(), None, brigade_dir, harness_runner=harness)
+
+        behaviour_id = _id()
+        expectation = _make_message(
+            "expectation",
+            "examiner",
+            "builder",
+            {
+                "expectations": [{"id": "E1", "statement": "add returns sum"}],
+                "integration_expectation": "sum correct",
+                "loop_count": 0,
+                "max_loops": 3,
+            },
+            behaviour_id=behaviour_id,
+        )
+        worker.process(expectation)
+
+        commit_request = _make_message(
+            "commit-request",
+            "examiner",
+            "builder",
+            {"summary": "login works"},
+            behaviour_id=behaviour_id,
+        )
+        reply = worker.process(commit_request)
+
+        assert reply.type == "committed"
+        assert reply.payload["commit_hash"] is not None
+        assert reply.payload["branch"] == f"brigade/{behaviour_id}"
+        assert reply.payload["summary"] == "login works"
+
+    def test_commit_request_with_no_changes_sends_error(self, brigade_dir):
+        harness = FakeHarness(evidence_payload=_executed_evidence())  # no files created
+        worker = BuilderWorker(_make_config(), None, brigade_dir, harness_runner=harness)
+
+        behaviour_id = _id()
+        expectation = _make_message(
+            "expectation",
+            "examiner",
+            "builder",
+            {
+                "expectations": [{"id": "E1", "statement": "add returns sum"}],
+                "integration_expectation": "sum correct",
+                "loop_count": 0,
+                "max_loops": 3,
+            },
+            behaviour_id=behaviour_id,
+        )
+        worker.process(expectation)
+
+        commit_request = _make_message(
+            "commit-request",
+            "examiner",
+            "builder",
+            {"summary": "login works"},
+            behaviour_id=behaviour_id,
+        )
+        reply = worker.process(commit_request)
+
+        assert reply.type == "committed"
+        assert reply.payload["commit_hash"] is None
+        assert "no changes" in reply.payload["error"]
 
     def test_verdict_fallback_uses_expectation_id(self, brigade_dir):
         """Regression: a failing harness on a verdict round must not KeyError.

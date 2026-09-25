@@ -82,6 +82,30 @@ class VerdictPayload(BaseModel):
     escalate: bool
 
 
+class CommitRequestPayload(BaseModel):
+    """Payload for `commit-request` (Examiner → Builder).
+
+    Sent when the Examiner accepts the evidence.  The Builder commits its
+    worktree changes and replies with `committed`.
+    """
+
+    summary: str
+
+
+class CommittedPayload(BaseModel):
+    """Payload for `committed` (Builder → Examiner).
+
+    `commit_hash` is None when the commit failed (e.g. the harness produced no
+    code changes); `error` then describes why.  `summary` echoes the accepted
+    summary from the `commit-request` so the Examiner can pass it up unchanged.
+    """
+
+    commit_hash: str | None
+    branch: str
+    summary: str
+    error: str = ""
+
+
 class BehaviourStatusPayload(BaseModel):
     """Payload for `behaviour-status` (Examiner → Analyst, Analyst → Interpreter)."""
 
@@ -164,6 +188,8 @@ PAYLOAD_MODEL_BY_TYPE: dict[str, type[BaseModel]] = {
     "expectation": ExpectationPayload,
     "evidence": EvidencePayload,
     "verdict": VerdictPayload,
+    "commit-request": CommitRequestPayload,
+    "committed": CommittedPayload,
     "behaviour-status": BehaviourStatusPayload,
     # Designer types
     "design-request": DesignRequestPayload,

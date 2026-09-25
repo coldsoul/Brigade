@@ -31,6 +31,8 @@ class ExaminerWorker(RoleWorker):
             return self._handle_behaviour(msg)
         if msg.type == "evidence":
             return self._handle_evidence(msg)
+        if msg.type == "committed":
+            return self._handle_committed(msg)
         return None
 
     # ------------------------------------------------------------------
@@ -77,12 +79,8 @@ class ExaminerWorker(RoleWorker):
         unmet = evaluation["unmet"]
 
         if not unmet:
-            payload = {
-                "behaviour_id": msg.behaviour_id,
-                "outcome": "solved",
-                "summary": evaluation["summary"],
-            }
-            return build_reply(msg, "analyst", "behaviour-status", payload)
+            payload = {"summary": evaluation["summary"]}
+            return build_reply(msg, "builder", "commit-request", payload)
 
         if current_loop >= max_loops:
             payload = {
@@ -99,6 +97,28 @@ class ExaminerWorker(RoleWorker):
             "escalate": False,
         }
         return build_reply(msg, "builder", "verdict", payload)
+
+    # ------------------------------------------------------------------
+    # committed → behaviour-status (the code is now actually delivered)
+    # ------------------------------------------------------------------
+
+    def _handle_committed(self, msg: Message) -> Message:
+        summary = msg.payload.get("summary", "")
+        if msg.payload.get("commit_hash"):
+            payload = {
+                "behaviour_id": msg.behaviour_id,
+                "outcome": "solved",
+                "summary": summary,
+            }
+        else:
+            payload = {
+                "behaviour_id": msg.behaviour_id,
+                "outcome": "blocked",
+                "summary": (
+                    f"the commit step failed: {msg.payload.get('error', 'unknown error')}"
+                ),
+            }
+        return build_reply(msg, "analyst", "behaviour-status", payload)
 
     # ------------------------------------------------------------------
     # helpers

@@ -86,19 +86,38 @@ class OverviewScreen(Screen):
         self.set_interval(1.0, self._check_liveness)
 
     def _check_liveness(self) -> None:
-        """Mark workers whose thread died without logging worker_exit as DIED."""
-        threads = getattr(self.app, "worker_threads", {})
-        if not threads:
+        """Drive the supervisor: restart dead workers and reflect liveness.
+
+        A dead worker is respawned by the supervisor (with backoff); the role
+        table shows a distinct RESTARTED flash on respawn, a DOWN-with-countdown
+        state while in backoff, and a persistent restart-count badge once a role
+        has ever been restarted.
+        """
+        supervisor = getattr(self.app, "supervisor", None)
+        if supervisor is None:
             return
+        restarted = supervisor.check_and_restart()
+        statuses = supervisor.status()
         table = self.query_one("#roles", DataTable)
-        for role, thread in threads.items():
-            if role in self.exited_roles:
-                continue
-            if not thread.is_alive():
+        for role, info in statuses.items():
+            restarts = info["restarts"]
+            if restarts > 0:
+                table.update_cell(role, "role", f"{role} ↻{restarts}")
+            if role in restarted:
+                self.exited_roles.discard(role)
                 table.update_cell(
                     role,
                     "status",
-                    "[red]DIED (no exit logged)[/red]",
+                    f"[yellow]↻ RESTARTED (#{restarts})[/yellow]",
+                    update_width=True,
+                )
+                table.update_cell(role, "behaviour", "—")
+            elif not info["alive"]:
+                table.update_cell(
+                    role,
+                    "status",
+                    f"[red]✖ DOWN — restarting in {info['retry_in']:.0f}s "
+                    f"(restart #{restarts})[/red]",
                     update_width=True,
                 )
                 table.update_cell(role, "behaviour", "—")
@@ -120,6 +139,15 @@ class OverviewScreen(Screen):
         elif event.event == "harness_end":
             status = f"harness done ({event.duration_s:.1f}s)"
             behaviour = _short(event.behaviour_id)
+        elif event.event == "harness_failed":
+            status = f"[red]HARNESS FAILED[/red] - {event.text or 'no evidence report'}"
+            behaviour = "—"
+        elif event.event == "committed":
+            status = "[green]committed[/green]"
+            behaviour = "—"
+        elif event.event == "commit_failed":
+            status = f"[red]COMMIT FAILED[/red] - {event.text or 'no changes'}"
+            behaviour = "—"
         elif event.event == "scan_complete":
             status = f"scan: {event.concern_count} concerns"
             behaviour = "—"
@@ -263,10 +291,10 @@ class BrigadeApp(App):
     TITLE = "Brigade"
     BINDINGS = [Binding("q", "quit", "Quit", priority=True)]
 
-    def __init__(self, brigade_dir: Path, worker_threads: list | None = None):
+    def __init__(self, brigade_dir: Path, supervisor=None):
         super().__init__()
         self.brigade_dir = brigade_dir
-        self.worker_threads = {t.name: t for t in (worker_threads or [])}
+        self.supervisor = supervisor
         self.overview = OverviewScreen(brigade_dir)
 
     def get_default_screen(self) -> Screen:
@@ -285,6 +313,6 @@ class BrigadeApp(App):
         self.push_screen(FlagsScreen(self.brigade_dir))
 
 
-def run_dashboard(brigade_dir: Path, worker_threads: list | None = None) -> None:
+def run_dashboard(brigade_dir: Path, supervisor=None) -> None:
     """Launch the dashboard (blocking)."""
-    BrigadeApp(brigade_dir, worker_threads=worker_threads).run()
+    BrigadeApp(brigade_dir, supervisor=supervisor).run()

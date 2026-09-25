@@ -18,12 +18,16 @@ class RoleEvent(Message):
             "produced",
             "harness_start",
             "harness_end",
+            "harness_failed",
+            "committed",
+            "commit_failed",
             "scan_complete",
             "worker_start",
             "worker_error",
             "worker_crashed",
             "worker_exit",
             "message_recovered",
+            "worker_restart",
         ],
         behaviour_id: str | None = None,
         message_type: str | None = None,
@@ -33,6 +37,7 @@ class RoleEvent(Message):
         max_loops: int | None = None,
         duration_s: float | None = None,
         concern_count: int | None = None,
+        restart_count: int | None = None,
         text: str = "",
         level: str = "INFO",
         ts: float = 0.0,
@@ -48,6 +53,7 @@ class RoleEvent(Message):
         self.max_loops = max_loops
         self.duration_s = duration_s
         self.concern_count = concern_count
+        self.restart_count = restart_count
         self.text = text
         self.level = level
         self.ts = ts

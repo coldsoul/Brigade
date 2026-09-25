@@ -8,8 +8,8 @@ and which edges are mailbox-routed vs live-chat.
 TOPOLOGY: dict[tuple[str, str], set[str]] = {
     ("interpreter", "analyst"): {"behaviour-to-implement"},
     ("analyst", "examiner"): {"behaviour"},
-    ("examiner", "builder"): {"expectation", "verdict"},
-    ("builder", "examiner"): {"evidence"},
+    ("examiner", "builder"): {"expectation", "verdict", "commit-request"},
+    ("builder", "examiner"): {"evidence", "committed"},
     ("examiner", "analyst"): {"behaviour-status"},
     ("analyst", "interpreter"): {"behaviour-status"},
     ("interpreter", "designer"): {"design-request"},

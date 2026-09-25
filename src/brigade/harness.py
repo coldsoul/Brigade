@@ -65,6 +65,8 @@ class HarnessRunner:
             return [
                 "opencode",
                 "run",
+                "--auto",
+                "--pure",
                 prompt,
                 "--model",
                 harness_model_name(harness, model),

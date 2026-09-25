@@ -275,7 +275,8 @@ class TestRedirectFds:
 
         content = path.read_text()
         assert "stdout line" in content
-        assert "stderr line" in content
+        assert "stderr line" not in content  # stderr is left alone for the TUI
+        assert b"stderr line" in result.stderr  # stderr still reaches the terminal
         assert b"restored stdout" in result.stdout  # fd 1 restored after the block
 
     def test_restores_on_exception(self, tmp_path):

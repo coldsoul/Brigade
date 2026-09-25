@@ -145,12 +145,20 @@ class TestSentinelErrorSurfacing:
 # Deliverable 2 — TUI renders worker lifecycle events
 # ---------------------------------------------------------------------------
 
-class _DeadThread:
-    def __init__(self, name: str):
-        self.name = name
+class _FakeSupervisor:
+    """Minimal supervisor stand-in for TUI liveness tests."""
 
-    def is_alive(self) -> bool:
-        return False
+    def __init__(self, statuses, restarted=None):
+        self.statuses = statuses
+        self.restarted = restarted or []
+        self.check_calls = 0
+
+    def check_and_restart(self) -> list[str]:
+        self.check_calls += 1
+        return self.restarted
+
+    def status(self):
+        return self.statuses
 
 
 def _status(app, role: str) -> str:
@@ -231,77 +239,97 @@ class TestTuiWorkerEvents:
 
 
 # ---------------------------------------------------------------------------
-# Deliverable 3 — TUI liveness check marks killed workers as DIED
+# Deliverable 3 — TUI liveness is driven by the supervisor
 # ---------------------------------------------------------------------------
 
 class TestTuiLiveness:
-    def test_dead_thread_marks_died(self, brigade_dir):
+    def test_down_worker_shows_backoff(self, brigade_dir):
         from brigade.tui.app import BrigadeApp
 
+        sup = _FakeSupervisor(
+            {"analyst": {"alive": False, "restarts": 0, "retry_in": 2.0}}
+        )
+
         async def run():
-            app = BrigadeApp(brigade_dir, worker_threads=[_DeadThread("analyst")])
+            app = BrigadeApp(brigade_dir, supervisor=sup)
             async with app.run_test(size=(100, 30)) as pilot:
                 await pilot.pause()
                 app.overview._check_liveness()
-                assert "DIED" in _status(app, "analyst")
+                assert "DOWN" in _status(app, "analyst")
+                assert sup.check_calls == 1
 
         asyncio.run(run())
 
-    def test_exited_role_not_marked_died(self, brigade_dir):
+    def test_restarted_worker_flashes(self, brigade_dir):
         from brigade.tui.app import BrigadeApp
-        from brigade.tui.events import RoleEvent
+
+        sup = _FakeSupervisor(
+            {"analyst": {"alive": True, "restarts": 1, "retry_in": 0.0}},
+            restarted=["analyst"],
+        )
 
         async def run():
-            app = BrigadeApp(brigade_dir, worker_threads=[_DeadThread("analyst")])
+            app = BrigadeApp(brigade_dir, supervisor=sup)
             async with app.run_test(size=(100, 30)) as pilot:
                 await pilot.pause()
-                app.post_message(RoleEvent(role="analyst", event="worker_exit", text="worker exiting"))
+                app.overview._check_liveness()
+                assert "RESTARTED" in _status(app, "analyst")
+
+        asyncio.run(run())
+
+    def test_alive_worker_untouched(self, brigade_dir):
+        from brigade.tui.app import BrigadeApp
+
+        sup = _FakeSupervisor(
+            {"analyst": {"alive": True, "restarts": 0, "retry_in": 0.0}}
+        )
+
+        async def run():
+            app = BrigadeApp(brigade_dir, supervisor=sup)
+            async with app.run_test(size=(100, 30)) as pilot:
                 await pilot.pause()
                 app.overview._check_liveness()
                 status = _status(app, "analyst")
-                assert status == "stopped"
-                assert "DIED" not in status
+                assert "DOWN" not in status
+                assert "RESTARTED" not in status
 
         asyncio.run(run())
 
-    def test_alive_thread_not_marked_died(self, brigade_dir):
-        import threading
+    def test_restart_count_badge_on_role_row(self, brigade_dir):
+        from textual.widgets import DataTable
 
         from brigade.tui.app import BrigadeApp
 
-        stop = threading.Event()
-        alive = threading.Thread(target=stop.wait, name="analyst")
-        alive.start()
+        sup = _FakeSupervisor(
+            {"analyst": {"alive": True, "restarts": 3, "retry_in": 0.0}}
+        )
 
-        try:
-            async def run():
-                app = BrigadeApp(brigade_dir, worker_threads=[alive])
-                async with app.run_test(size=(100, 30)) as pilot:
-                    await pilot.pause()
-                    app.overview._check_liveness()
-                    status = _status(app, "analyst")
-                    assert "DIED" not in status
+        async def run():
+            app = BrigadeApp(brigade_dir, supervisor=sup)
+            async with app.run_test(size=(100, 30)) as pilot:
+                await pilot.pause()
+                app.overview._check_liveness()
+                table = app.overview.query_one("#roles", DataTable)
+                row = table.get_row_at(table.get_row_index("analyst"))
+                assert "↻3" in row[0]
 
-            asyncio.run(run())
-        finally:
-            stop.set()
-            alive.join(timeout=1)
+        asyncio.run(run())
 
 
 # ---------------------------------------------------------------------------
-# Deliverable 4 — BrigadeApp maps worker threads by name
+# Deliverable 4 — BrigadeApp holds the supervisor
 # ---------------------------------------------------------------------------
 
-class TestBrigadeAppThreads:
-    def test_threads_mapped_by_name(self, brigade_dir):
+class TestBrigadeAppSupervisor:
+    def test_supervisor_stored(self, brigade_dir):
         from brigade.tui.app import BrigadeApp
 
-        app = BrigadeApp(brigade_dir, worker_threads=[_DeadThread("analyst"), _DeadThread("sentinel")])
-        assert set(app.worker_threads) == {"analyst", "sentinel"}
-        assert app.worker_threads["analyst"].name == "analyst"
+        sup = _FakeSupervisor({})
+        app = BrigadeApp(brigade_dir, supervisor=sup)
+        assert app.supervisor is sup
 
-    def test_no_threads_is_ok(self, brigade_dir):
+    def test_no_supervisor_is_ok(self, brigade_dir):
         from brigade.tui.app import BrigadeApp
 
         app = BrigadeApp(brigade_dir)
-        assert app.worker_threads == {}
+        assert app.supervisor is None

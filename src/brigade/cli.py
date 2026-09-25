@@ -358,8 +358,6 @@ def _rmtree_safe(path: Path):
 @click.option("--verbose", is_flag=True, help="Show debug output.")
 def up(quiet: bool, verbose: bool):
     """Start the Brigade role workers and the live dashboard."""
-    import threading
-
     from brigade.config import ConfigError, load_config, validate_runtime_config
     from brigade.llm import LiteLLMRouter
     from brigade.logging_config import configure_logging
@@ -393,24 +391,20 @@ def up(quiet: bool, verbose: bool):
         ExaminerWorker(config, router, brigade_dir),
         BuilderWorker(config, router, brigade_dir),
         DesignerWorker(config, router, brigade_dir),
+        Sentinel(config, router, brigade_dir),
     ]
 
-    sentinel = Sentinel(config, router, brigade_dir)
+    from brigade.supervisor import WorkerSupervisor
 
-    threads = [
-        threading.Thread(target=w.run, daemon=True, name=w.role)
-        for w in workers
-    ]
-    threads.append(threading.Thread(target=sentinel.run, daemon=True, name="sentinel"))
-    for t in threads:
-        t.start()
+    supervisor = WorkerSupervisor(workers)
+    supervisor.start()
 
     # Launch the TUI dashboard on the main thread, wiring log events into it.
     from brigade.logging_config import redirect_fds_to_file
     from brigade.tui.app import BrigadeApp
     from brigade.tui.bridge import TUILogHandler
 
-    app = BrigadeApp(brigade_dir, worker_threads=threads)
+    app = BrigadeApp(brigade_dir, supervisor=supervisor)
     logging.getLogger().addHandler(TUILogHandler(app))
     stray_output_path = brigade_dir / "logs" / "stray-output.log"
     with redirect_fds_to_file(stray_output_path):
